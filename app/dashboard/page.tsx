@@ -134,11 +134,18 @@ export default function Dashboard() {
               View daily sales summary and top-selling items
             </p>
           </div>
-          <Link href="/">
-            <Button variant="outline" size="sm">
-              Upload Data
-            </Button>
-          </Link>
+          <div className="flex gap-2">
+            <Link href="/data">
+              <Button variant="outline" size="sm">
+                Data Display
+              </Button>
+            </Link>
+            <Link href="/">
+              <Button variant="outline" size="sm">
+                Upload Data
+              </Button>
+            </Link>
+          </div>
         </div>
 
         {/* Filters Card */}

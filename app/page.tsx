@@ -39,7 +39,15 @@ export default function UploadPage() {
       const json = await res.json();
 
       if (!res.ok) {
-        setStatus({ type: "error", message: `Error: ${json.error}` });
+        // Handle duplicate report error specifically
+        if (res.status === 409 && json.error === "DUPLICATE_REPORT") {
+          setStatus({
+            type: "error",
+            message: `⚠️ พบรายการซ้ำ: ${json.message || "A report with the same date, store, and category already exists."}`,
+          });
+        } else {
+          setStatus({ type: "error", message: `Error: ${json.error || json.message || "Unknown error occurred"}` });
+        }
         setUploadResult(null);
       } else {
         setStatus({
@@ -70,11 +78,18 @@ export default function UploadPage() {
                 Upload Excel files to import daily sales data
               </p>
             </div>
-            <Link href="/dashboard">
-              <Button variant="outline" size="sm">
-                View Dashboard
-              </Button>
-            </Link>
+            <div className="flex gap-2">
+              <Link href="/dashboard">
+                <Button variant="outline" size="sm">
+                  Dashboard
+                </Button>
+              </Link>
+              <Link href="/data">
+                <Button variant="outline" size="sm">
+                  Data Display
+                </Button>
+              </Link>
+            </div>
           </div>
         </CardHeader>
 
@@ -150,7 +165,7 @@ export default function UploadPage() {
                   status.type === "error" ? "text-red-800" : "text-green-800"
                 }
               >
-                {status.message}
+                <div className="whitespace-pre-line">{status.message}</div>
               </AlertDescription>
             </Alert>
           )}
