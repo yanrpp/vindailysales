@@ -1,7 +1,7 @@
 import "./globals.css";
 
 export const metadata = {
-  title: "Daily Sales Dashboard",
+  title: "Daily Sales Management",
 };
 
 export default function RootLayout({

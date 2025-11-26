@@ -51,8 +51,10 @@ export async function GET(req: NextRequest) {
     const search = params.get("search") || "";
     const page = parseInt(params.get("page") || "1", 10);
     const pageSize = parseInt(params.get("pageSize") || "20", 10);
-    const sortBy = params.get("sortBy") || "item_code";
+    const sortBy = params.get("sortBy") || "item_name";
     const sortOrder = (params.get("sortOrder") || "asc") as "asc" | "desc";
+    const maxQuotaMultiplier = parseFloat(params.get("maxQuotaMultiplier") || "10");
+    const minQuotaMultiplier = parseFloat(params.get("minQuotaMultiplier") || "5");
 
     const config = getConfig();
 
@@ -68,11 +70,10 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ดึงข้อมูล unique items (item_code, item_name, unit)
+    // ดึงข้อมูล unique items (item_code, item_name, unit) โดยใช้ distinct
     let itemsQuery = supabase
       .from("daily_sale_items")
-      .select("item_code, item_name, unit")
-      .order("item_code", { ascending: true });
+      .select("item_code, item_name, unit", { count: "exact" });
 
     // ถ้ามี search keyword
     if (search) {
@@ -84,6 +85,7 @@ export async function GET(req: NextRequest) {
     const { data: allItems, error: itemsError } = await itemsQuery;
 
     if (itemsError) {
+      console.error("Error fetching items:", itemsError);
       return NextResponse.json(
         { error: itemsError.message },
         { status: 500 },
@@ -122,30 +124,39 @@ export async function GET(req: NextRequest) {
       Record<string, number>
     > = {}; // item_code -> { report_date: quantity }
 
-    for (const reportDate of reportDatesArray) {
+    // ดึงข้อมูล quantity สำหรับทุก report_date ในครั้งเดียว (ใช้ in filter)
+    try {
       const { data: itemsData, error: itemsDataError } = await supabase
         .from("daily_sale_items")
         .select(
           "item_code, quantity, daily_sale_reports!inner(report_date)",
         )
-        .eq("daily_sale_reports.report_date", reportDate);
+        .in("daily_sale_reports.report_date", reportDatesArray);
 
       if (itemsDataError) {
-        console.error(`Error fetching data for ${reportDate}:`, itemsDataError);
-        continue;
-      }
-
-      if (itemsData) {
-        // รวม quantity ตาม item_code สำหรับ report_date นี้
+        console.error("Error fetching quantities:", itemsDataError);
+        // ไม่ return error แต่ให้ continue เพื่อให้แสดงข้อมูลที่ดึงได้แล้ว
+      } else if (itemsData && itemsData.length > 0) {
+        // รวม quantity ตาม item_code และ report_date
         itemsData.forEach((item: any) => {
           const code = item.item_code;
+          if (!code) return; // ข้ามถ้าไม่มี item_code
+          
+          const reportDate = item.daily_sale_reports?.report_date;
+          if (!reportDate) return; // ข้ามถ้าไม่มี report_date
+          
           if (!quantitiesMap[code]) {
             quantitiesMap[code] = {};
           }
-          quantitiesMap[code][reportDate] =
-            (quantitiesMap[code][reportDate] || 0) + (item.quantity || 0);
+          // รวม quantity (ถ้ามีหลายแถวของ item_code เดียวกันใน report_date เดียวกัน)
+          const currentQty = quantitiesMap[code][reportDate] || 0;
+          const newQty = Number(item.quantity) || 0;
+          quantitiesMap[code][reportDate] = currentQty + newQty;
         });
       }
+    } catch (queryError) {
+      console.error("Error in quantity query:", queryError);
+      // Continue processing with empty quantitiesMap
     }
 
     // สร้างข้อมูลสำหรับ table
@@ -155,6 +166,7 @@ export async function GET(req: NextRequest) {
       const monthData: Record<string, { label: string; value: number }> = {};
 
       reportDatesArray.forEach((reportDate, idx) => {
+        // ดึง quantity จาก map ที่เราสร้างไว้
         const qty = quantitiesMap[code]?.[reportDate] || 0;
         quantities.push(qty);
         monthData[`month_${idx + 1}`] = {
@@ -172,11 +184,21 @@ export async function GET(req: NextRequest) {
         };
       }
 
-      const minQty = Math.min(...quantities.filter((q) => q > 0), 0);
-      const maxQty = Math.max(...quantities);
+      // คำนวณ min: หาค่าที่น้อยที่สุดจาก 3 เดือนที่เลือก
+      // ใช้เฉพาะค่าที่ > 0 เท่านั้น (ไม่นับ 0)
+      // แต่ถ้าทุกค่าเป็น 0 ให้แสดง 0
+      const validQuantities = quantities.filter((q) => q > 0);
+      const minQty = validQuantities.length > 0 
+        ? Math.min(...validQuantities) 
+        : 0;
+      
+      // คำนวณ max: หาค่าที่มากที่สุดจาก 3 เดือนทั้งหมด (รวม 0 ด้วย)
+      const maxQty = quantities.length > 0 ? Math.max(...quantities) : 0;
       const avgQty = calculateAverage(quantities);
-      const maxQuota = Math.round((avgQty / config.c_monthAvg) * config.b_max);
-      const minQuota = avgQty * config.a_min;
+      // Maximum Quota: ใช้ค่าจาก มากสุดใน 3 เดือนที่เลือก มา หาร 30 แล้ว คูณด้วย maxQuotaMultiplier
+      const maxQuota = Math.round((maxQty / 30) * maxQuotaMultiplier);
+      // Minimum Quota: ใช้ค่าจาก มากสุดใน 3 เดือนที่เลือก มา หาร 30 แล้ว คูณด้วย minQuotaMultiplier
+      const minQuota = Math.round((maxQty / 30) * minQuotaMultiplier);
 
       return {
         no: index + 1,
@@ -199,6 +221,15 @@ export async function GET(req: NextRequest) {
 
     // Sorting
     const sortedData = [...tableData].sort((a, b) => {
+      // ถ้าเรียงตาม "no" ให้เรียงตาม no โดยตรง (ตัวเลข)
+      if (sortBy === "no") {
+        if (sortOrder === "asc") {
+          return a.no - b.no;
+        } else {
+          return b.no - a.no;
+        }
+      }
+
       let aVal: any = a[sortBy as keyof typeof a];
       let bVal: any = b[sortBy as keyof typeof b];
 
@@ -230,8 +261,14 @@ export async function GET(req: NextRequest) {
     const endIndex = startIndex + pageSize;
     const paginatedData = sortedData.slice(startIndex, endIndex);
 
+    // คำนวณ "no" ใหม่ตามลำดับในหน้า (page) เพื่อให้แสดงลำดับที่ถูกต้องเสมอ
+    const paginatedDataWithCorrectNo = paginatedData.map((row, index) => ({
+      ...row,
+      no: startIndex + index + 1,
+    }));
+
     return NextResponse.json({
-      data: paginatedData,
+      data: paginatedDataWithCorrectNo,
       total: total,
       page: page,
       pageSize: pageSize,
@@ -241,7 +278,14 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: errorMessage }, { status: 500 });
+    console.error("Error in /api/data:", err);
+    return NextResponse.json(
+      { 
+        error: errorMessage,
+        details: err instanceof Error ? err.stack : undefined
+      }, 
+      { status: 500 }
+    );
   }
 }
 

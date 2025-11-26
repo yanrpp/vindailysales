@@ -259,18 +259,42 @@ function processSheet(
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
+    
+    // รองรับทั้ง single file และ multiple files
     const file = formData.get("file") as File | null;
-    if (!file) return NextResponse.json({ error: "No file" }, { status: 400 });
+    const files = formData.getAll("files") as File[];
+    
+    // รวมไฟล์ทั้งหมด (รองรับทั้งกรณีส่งมาเป็น "file" หรือ "files")
+    const allFiles: File[] = [];
+    if (file) {
+      allFiles.push(file);
+    }
+    if (files.length > 0) {
+      allFiles.push(...files);
+    }
+    
+    if (allFiles.length === 0) {
+      return NextResponse.json({ error: "No file provided" }, { status: 400 });
+    }
 
-    const arrayBuffer = await file.arrayBuffer();
-    const workbook = new ExcelJS.Workbook();
-    await workbook.xlsx.load(arrayBuffer);
-
-    const results: Array<{
+    const allResults: Array<{
+      filename: string;
       sheet_name: string;
       report_id: number;
       rows: number;
     }> = [];
+
+    // ประมวลผลทุกไฟล์
+    for (const currentFile of allFiles) {
+      const arrayBuffer = await currentFile.arrayBuffer();
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(arrayBuffer);
+
+      const fileResults: Array<{
+        sheet_name: string;
+        report_id: number;
+        rows: number;
+      }> = [];
 
     // -----------------------------
     // ประมวลผลทุก sheet
@@ -298,7 +322,7 @@ export async function POST(req: NextRequest) {
         reportDate,
         printedAt,
         items,
-      } = processSheet(raw, file.name, sheetName, reportDateFromFirstRow);
+      } = processSheet(raw, currentFile.name, sheetName, reportDateFromFirstRow);
 
       if (items.length === 0) {
         // ข้าม sheet ที่ไม่มีข้อมูล
@@ -322,7 +346,9 @@ export async function POST(req: NextRequest) {
             `📦 หมวดหมู่: ${category}\n\n` +
             `รายการที่มีอยู่แล้ว:\n` +
             `  • Report ID: ${existingReport.id}\n` +
-            `  • ชื่อไฟล์: ${existingReport.filename || "N/A"}`;
+            `  • ชื่อไฟล์: ${existingReport.filename || "N/A"}\n\n` +
+            `ไฟล์: ${currentFile.name}\n` +
+            `Sheet: ${sheetName}`;
           
           return NextResponse.json(
           {
@@ -334,6 +360,8 @@ export async function POST(req: NextRequest) {
               category: category,
               existing_report_id: existingReport.id,
               existing_filename: existingReport.filename,
+              failed_file: currentFile.name,
+              failed_sheet: sheetName,
             },
           },
           { status: 409 }, // 409 Conflict
@@ -350,7 +378,7 @@ export async function POST(req: NextRequest) {
           store,
           category,
           printed_at: printedAt ? new Date(printedAt) : null,
-          filename: `${file.name} (${sheetName})`,
+          filename: `${currentFile.name} (${sheetName})`,
         })
         .select()
         .single();
@@ -373,20 +401,34 @@ export async function POST(req: NextRequest) {
 
       if (itemErr) throw itemErr;
 
-      results.push({
+      fileResults.push({
         sheet_name: sheetName,
         report_id: reportId,
         rows: items.length,
       });
     }
 
-    const totalRows = results.reduce((sum, r) => sum + r.rows, 0);
+      // เพิ่มผลลัพธ์ของไฟล์นี้เข้าไปใน allResults
+      fileResults.forEach((result) => {
+        allResults.push({
+          filename: currentFile.name,
+          sheet_name: result.sheet_name,
+          report_id: result.report_id,
+          rows: result.rows,
+        });
+      });
+    }
+
+    const totalRows = allResults.reduce((sum, r) => sum + r.rows, 0);
+    const totalSheets = allResults.length;
+    const totalFiles = allFiles.length;
 
     return NextResponse.json({
       message: "Import success",
-      sheets_processed: results.length,
+      files_processed: totalFiles,
+      sheets_processed: totalSheets,
       total_rows: totalRows,
-      details: results,
+      details: allResults,
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
