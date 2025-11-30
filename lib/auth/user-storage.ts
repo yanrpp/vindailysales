@@ -4,7 +4,6 @@ import path from "path";
 export interface User {
   id: string;
   username: string;
-  email: string;
   passwordHash: string;
   role: "admin" | "user";
   createdAt: string;
@@ -57,12 +56,6 @@ export function findUserByUsername(username: string): User | undefined {
   return users.find((u) => u.username.toLowerCase() === username.toLowerCase());
 }
 
-// หา user โดย email
-export function findUserByEmail(email: string): User | undefined {
-  const users = readUsers();
-  return users.find((u) => u.email.toLowerCase() === email.toLowerCase());
-}
-
 // หา user โดย ID
 export function findUserById(id: string): User | undefined {
   const users = readUsers();
@@ -76,11 +69,6 @@ export function createUser(userData: Omit<User, "id" | "createdAt" | "updatedAt"
   // ตรวจสอบ username ซ้ำ
   if (findUserByUsername(userData.username)) {
     throw new Error("Username already exists");
-  }
-  
-  // ตรวจสอบ email ซ้ำ
-  if (findUserByEmail(userData.email)) {
-    throw new Error("Email already exists");
   }
 
   const newUser: User = {
@@ -108,13 +96,6 @@ export function updateUser(id: string, updates: Partial<Omit<User, "id" | "creat
   if (updates.username && updates.username !== users[userIndex].username) {
     if (findUserByUsername(updates.username)) {
       throw new Error("Username already exists");
-    }
-  }
-
-  // ตรวจสอบ email ซ้ำ (ถ้ามีการเปลี่ยน)
-  if (updates.email && updates.email !== users[userIndex].email) {
-    if (findUserByEmail(updates.email)) {
-      throw new Error("Email already exists");
     }
   }
 

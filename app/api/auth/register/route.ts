@@ -5,12 +5,12 @@ import { hashPassword, generateToken } from "@/lib/auth/auth-utils";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username, email, password, role } = body;
+    const { username, password, role } = body;
 
     // ตรวจสอบ input
-    if (!username || !email || !password) {
+    if (!username || !password) {
       return NextResponse.json(
-        { error: "Username, email, and password are required" },
+        { error: "Username and password are required" },
         { status: 400 }
       );
     }
@@ -38,7 +38,6 @@ export async function POST(req: NextRequest) {
     // สร้าง user ใหม่ (default role เป็น 'user' ถ้าไม่ระบุ)
     const newUser = createUser({
       username,
-      email,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: true,

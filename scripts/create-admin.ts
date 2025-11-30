@@ -8,7 +8,6 @@ import { hashPassword } from "../lib/auth/auth-utils";
 
 async function createAdminUser() {
   const username = process.env.ADMIN_USERNAME || "admin";
-  const email = process.env.ADMIN_EMAIL || "admin@example.com";
   const password = process.env.ADMIN_PASSWORD || "admin123";
 
   try {
@@ -25,7 +24,6 @@ async function createAdminUser() {
     // สร้าง admin user
     const adminUser = createUser({
       username,
-      email,
       passwordHash,
       role: "admin",
       isActive: true,
@@ -33,7 +31,6 @@ async function createAdminUser() {
 
     console.log("✅ Admin user created successfully!");
     console.log(`   Username: ${adminUser.username}`);
-    console.log(`   Email: ${adminUser.email}`);
     console.log(`   Role: ${adminUser.role}`);
     console.log(`   Password: ${password}`);
     console.log("\n⚠️  Please change the default password after first login!");

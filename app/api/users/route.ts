@@ -33,12 +33,12 @@ export const GET = requireAdmin(async (req) => {
 export const POST = requireAdmin(async (req) => {
   try {
     const body = await req.json();
-    const { username, email, password, role, isActive } = body;
+    const { username, password, role, isActive } = body;
 
     // ตรวจสอบ input
-    if (!username || !email || !password) {
+    if (!username || !password) {
       return NextResponse.json(
-        { error: "Username, email, and password are required" },
+        { error: "Username and password are required" },
         { status: 400 }
       );
     }
@@ -65,7 +65,6 @@ export const POST = requireAdmin(async (req) => {
     // สร้าง user
     const newUser = createUser({
       username,
-      email,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: isActive !== undefined ? isActive : true,
