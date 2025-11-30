@@ -16,22 +16,9 @@ export async function POST(req: NextRequest) {
     }
 
     // หา user
-    console.log("🔍 Debug - Searching for username:", username);
-    const user = await findUserByUsername(username);
-    console.log("🔍 Debug - User found:", user ? "YES" : "NO");
-    if (user) {
-      console.log("🔍 Debug - User details:", {
-        id: user.id,
-        username: user.username,
-        role: user.role,
-        isActive: user.isActive,
-        hasPasswordHash: !!user.passwordHash,
-        passwordHashLength: user.passwordHash?.length,
-      });
-    }
+    const user = findUserByUsername(username);
     
     if (!user) {
-      console.log("❌ Debug - User not found for username:", username);
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
@@ -40,7 +27,6 @@ export async function POST(req: NextRequest) {
 
     // ตรวจสอบว่า user active หรือไม่
     if (!isUserActive(user)) {
-      console.log("❌ Debug - User is inactive:", user.username);
       return NextResponse.json(
         { error: "Account is inactive. Please contact administrator." },
         { status: 403 }
@@ -48,14 +34,9 @@ export async function POST(req: NextRequest) {
     }
 
     // ตรวจสอบ password
-    console.log("🔍 Debug - Verifying password...");
-    console.log("🔍 Debug - Password provided length:", password.length);
-    console.log("🔍 Debug - Stored hash preview:", user.passwordHash?.substring(0, 20) + "...");
     const isValidPassword = await verifyPassword(password, user.passwordHash);
-    console.log("🔍 Debug - Password valid:", isValidPassword);
     
     if (!isValidPassword) {
-      console.log("❌ Debug - Password verification failed for user:", user.username);
       return NextResponse.json(
         { error: "Invalid username or password" },
         { status: 401 }
@@ -63,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     // อัปเดต last login
-    await updateLastLogin(user.id);
+    updateLastLogin(user.id);
 
     // สร้าง token
     const token = generateToken(user);

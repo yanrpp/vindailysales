@@ -10,7 +10,7 @@ import { hashPassword } from "@/lib/auth/auth-utils";
 // GET: ดึงรายการ users ทั้งหมด (admin only)
 export const GET = requireAdmin(async (req) => {
   try {
-    const users = await getAllUsers();
+    const users = getAllUsers();
 
     // ไม่ส่ง password hash
     const usersWithoutPassword = users.map(({ passwordHash, ...user }) => user);
@@ -33,12 +33,12 @@ export const GET = requireAdmin(async (req) => {
 export const POST = requireAdmin(async (req) => {
   try {
     const body = await req.json();
-    const { username, password, role, isActive } = body;
+    const { username, email, password, role, isActive } = body;
 
     // ตรวจสอบ input
-    if (!username || !password) {
+    if (!username || !email || !password) {
       return NextResponse.json(
-        { error: "Username and password are required" },
+        { error: "Username, email, and password are required" },
         { status: 400 }
       );
     }
@@ -51,7 +51,7 @@ export const POST = requireAdmin(async (req) => {
     }
 
     // ตรวจสอบ username ซ้ำ
-    const existingUser = await findUserByUsername(username);
+    const existingUser = findUserByUsername(username);
     if (existingUser) {
       return NextResponse.json(
         { error: "Username already exists" },
@@ -63,8 +63,9 @@ export const POST = requireAdmin(async (req) => {
     const passwordHash = await hashPassword(password);
 
     // สร้าง user
-    const newUser = await createUser({
+    const newUser = createUser({
       username,
+      email,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: isActive !== undefined ? isActive : true,

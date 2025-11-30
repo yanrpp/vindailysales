@@ -29,7 +29,7 @@ export const POST = requireAuth(async (req) => {
       );
     }
 
-    const user = await findUserById(req.user.userId);
+    const user = findUserById(req.user.userId);
     if (!user) {
       return NextResponse.json(
         { error: "User not found" },
@@ -53,7 +53,7 @@ export const POST = requireAuth(async (req) => {
     const newPasswordHash = await hashPassword(newPassword);
 
     // อัปเดต password
-    await updateUser(user.id, { passwordHash: newPasswordHash });
+    updateUser(user.id, { passwordHash: newPasswordHash });
 
     return NextResponse.json({
       success: true,

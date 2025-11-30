@@ -32,7 +32,7 @@ export const GET = requireAuth(async (req) => {
       );
     }
 
-    const user = await findUserById(id);
+    const user = findUserById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -91,7 +91,7 @@ export const PUT = requireAuth(async (req) => {
       }
     }
 
-    const user = await findUserById(id);
+    const user = findUserById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -113,7 +113,7 @@ export const PUT = requireAuth(async (req) => {
     }
 
     // อัปเดต user
-    const updatedUser = await updateUser(id, updates);
+    const updatedUser = updateUser(id, updates);
 
     // ส่ง response (ไม่ส่ง password hash)
     const { passwordHash: _, ...userWithoutPassword } = updatedUser;
@@ -159,7 +159,7 @@ export const DELETE = requireAdmin(async (req) => {
       );
     }
 
-    await deleteUser(id);
+    deleteUser(id);
 
     return NextResponse.json({
       success: true,
