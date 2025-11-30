@@ -32,7 +32,7 @@ export const GET = requireAuth(async (req) => {
       );
     }
 
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -71,7 +71,7 @@ export const PUT = requireAuth(async (req) => {
     }
 
     const body = await req.json();
-    const { username, email, role, isActive, password } = body;
+    const { username, role, isActive, password } = body;
 
     // ตรวจสอบสิทธิ์: user สามารถแก้ไขข้อมูลตัวเองได้ (ยกเว้น role) หรือ admin แก้ไขได้ทุกคน
     if (req.user.userId !== id && req.user.role !== "admin") {
@@ -91,7 +91,7 @@ export const PUT = requireAuth(async (req) => {
       }
     }
 
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -99,7 +99,6 @@ export const PUT = requireAuth(async (req) => {
     // เตรียมข้อมูลสำหรับอัปเดต
     const updates: any = {};
     if (username !== undefined) updates.username = username;
-    if (email !== undefined) updates.email = email;
     if (role !== undefined && req.user.role === "admin") updates.role = role;
     if (isActive !== undefined && req.user.role === "admin")
       updates.isActive = isActive;
@@ -114,7 +113,7 @@ export const PUT = requireAuth(async (req) => {
     }
 
     // อัปเดต user
-    const updatedUser = updateUser(id, updates);
+    const updatedUser = await updateUser(id, updates);
 
     // ส่ง response (ไม่ส่ง password hash)
     const { passwordHash: _, ...userWithoutPassword } = updatedUser;
@@ -160,7 +159,7 @@ export const DELETE = requireAdmin(async (req) => {
       );
     }
 
-    deleteUser(id);
+    await deleteUser(id);
 
     return NextResponse.json({
       success: true,

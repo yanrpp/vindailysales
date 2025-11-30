@@ -11,7 +11,7 @@ export const GET = requireAuth(async (req) => {
       );
     }
 
-    const user = findUserById(req.user.userId);
+    const user = await findUserById(req.user.userId);
     if (!user) {
       return NextResponse.json(
         { error: "User not found" },

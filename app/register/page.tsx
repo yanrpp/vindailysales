@@ -12,7 +12,6 @@ import Link from "next/link";
 
 export default function RegisterPage() {
   const [username, setUsername] = useState("");
-  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,7 +37,7 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      await register(username, email, password);
+      await register(username, password);
       router.push("/");
     } catch (err: any) {
       setError(err.message || "Registration failed. Please try again.");
@@ -72,19 +71,6 @@ export default function RegisterPage() {
                 placeholder="กรุณากรอกชื่อผู้ใช้"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                required
-                disabled={loading}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="email">อีเมล</Label>
-              <Input
-                id="email"
-                type="email"
-                placeholder="example@email.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
                 required
                 disabled={loading}
               />

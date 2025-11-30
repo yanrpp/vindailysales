@@ -4,14 +4,13 @@ import {
   getAllUsers,
   createUser,
   findUserByUsername,
-  findUserByEmail,
 } from "@/lib/auth/user-storage";
 import { hashPassword } from "@/lib/auth/auth-utils";
 
 // GET: ดึงรายการ users ทั้งหมด (admin only)
 export const GET = requireAdmin(async (req) => {
   try {
-    const users = getAllUsers();
+    const users = await getAllUsers();
 
     // ไม่ส่ง password hash
     const usersWithoutPassword = users.map(({ passwordHash, ...user }) => user);
@@ -34,12 +33,12 @@ export const GET = requireAdmin(async (req) => {
 export const POST = requireAdmin(async (req) => {
   try {
     const body = await req.json();
-    const { username, email, password, role, isActive } = body;
+    const { username, password, role, isActive } = body;
 
     // ตรวจสอบ input
-    if (!username || !email || !password) {
+    if (!username || !password) {
       return NextResponse.json(
-        { error: "Username, email, and password are required" },
+        { error: "Username and password are required" },
         { status: 400 }
       );
     }
@@ -51,27 +50,11 @@ export const POST = requireAdmin(async (req) => {
       );
     }
 
-    // ตรวจสอบ email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: "Invalid email format" },
-        { status: 400 }
-      );
-    }
-
     // ตรวจสอบ username ซ้ำ
-    if (findUserByUsername(username)) {
+    const existingUser = await findUserByUsername(username);
+    if (existingUser) {
       return NextResponse.json(
         { error: "Username already exists" },
-        { status: 409 }
-      );
-    }
-
-    // ตรวจสอบ email ซ้ำ
-    if (findUserByEmail(email)) {
-      return NextResponse.json(
-        { error: "Email already exists" },
         { status: 409 }
       );
     }
@@ -80,9 +63,8 @@ export const POST = requireAdmin(async (req) => {
     const passwordHash = await hashPassword(password);
 
     // สร้าง user
-    const newUser = createUser({
+    const newUser = await createUser({
       username,
-      email,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: isActive !== undefined ? isActive : true,

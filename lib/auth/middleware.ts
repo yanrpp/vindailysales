@@ -31,7 +31,7 @@ export function requireAuth(
     }
 
     // ตรวจสอบว่า user ยังมีอยู่ในระบบ
-    const user = findUserById(payload.userId);
+    const user = await findUserById(payload.userId);
     if (!user || !user.isActive) {
       return NextResponse.json(
         { error: "User not found or inactive" },

@@ -1,16 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createUser, findUserByUsername, findUserByEmail } from "@/lib/auth/user-storage";
+import { createUser, findUserByUsername } from "@/lib/auth/user-storage";
 import { hashPassword, generateToken } from "@/lib/auth/auth-utils";
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username, email, password, role } = body;
+    const { username, password, role } = body;
 
     // ตรวจสอบ input
-    if (!username || !email || !password) {
+    if (!username || !password) {
       return NextResponse.json(
-        { error: "Username, email, and password are required" },
+        { error: "Username and password are required" },
         { status: 400 }
       );
     }
@@ -23,27 +23,11 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ตรวจสอบ email format
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return NextResponse.json(
-        { error: "Invalid email format" },
-        { status: 400 }
-      );
-    }
-
     // ตรวจสอบ username ซ้ำ
-    if (findUserByUsername(username)) {
+    const existingUser = await findUserByUsername(username);
+    if (existingUser) {
       return NextResponse.json(
         { error: "Username already exists" },
-        { status: 409 }
-      );
-    }
-
-    // ตรวจสอบ email ซ้ำ
-    if (findUserByEmail(email)) {
-      return NextResponse.json(
-        { error: "Email already exists" },
         { status: 409 }
       );
     }
@@ -52,9 +36,8 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password);
 
     // สร้าง user ใหม่ (default role เป็น 'user' ถ้าไม่ระบุ)
-    const newUser = createUser({
+    const newUser = await createUser({
       username,
-      email,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: true,

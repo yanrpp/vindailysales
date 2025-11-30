@@ -1,6 +1,6 @@
 # ระบบ Authentication และ User Management
 
-ระบบ authentication ที่ไม่ใช้ database โดยใช้ JSON file สำหรับเก็บข้อมูลผู้ใช้
+ระบบ authentication ที่ใช้ Supabase profiles table สำหรับเก็บข้อมูลผู้ใช้
 
 ## คุณสมบัติ
 
@@ -23,7 +23,7 @@
 
 ```
 lib/auth/
-├── user-storage.ts      # ระบบเก็บข้อมูลผู้ใช้ (JSON file)
+├── user-storage.ts      # ระบบเก็บข้อมูลผู้ใช้ (Supabase profiles table)
 ├── auth-utils.ts        # Utilities สำหรับ JWT และ password hashing
 ├── middleware.ts        # Middleware สำหรับ protected routes
 ├── auth-context.tsx     # React Context สำหรับ authentication state
@@ -57,12 +57,11 @@ npm run create-admin
 หรือกำหนดค่าเอง:
 
 ```bash
-ADMIN_USERNAME=admin ADMIN_EMAIL=admin@example.com ADMIN_PASSWORD=admin123 npm run create-admin
+ADMIN_USERNAME=admin ADMIN_PASSWORD=admin123 npm run create-admin
 ```
 
 Default credentials:
 - Username: `admin`
-- Email: `admin@example.com`
 - Password: `admin123`
 
 ⚠️ **สำคัญ**: ควรเปลี่ยนรหัสผ่านหลังจาก login ครั้งแรก!
@@ -78,11 +77,15 @@ JWT_EXPIRES_IN=7d
 
 ### 3. ข้อมูลผู้ใช้ถูกเก็บใน
 
-```
-data/users.json
-```
-
-ไฟล์นี้จะถูกสร้างอัตโนมัติเมื่อมีการสร้าง user ครั้งแรก
+Supabase `profiles` table ซึ่งมีโครงสร้าง:
+- `id` (uuid) - Primary key
+- `username` (text, unique) - ชื่อผู้ใช้
+- `password_hash` (text) - รหัสผ่านที่ hash แล้ว
+- `role` (text) - บทบาท ('admin' หรือ 'user')
+- `is_active` (boolean) - สถานะการใช้งาน
+- `last_login` (timestamptz) - เวลาเข้าสู่ระบบล่าสุด
+- `created_at` (timestamptz) - วันที่สร้าง
+- `updated_at` (timestamptz) - วันที่อัปเดตล่าสุด
 
 ## API Endpoints
 
@@ -107,7 +110,6 @@ Login และรับ JWT token
   "user": {
     "id": "user_123",
     "username": "admin",
-    "email": "admin@example.com",
     "role": "admin",
     "isActive": true,
     "createdAt": "2024-01-01T00:00:00.000Z"
@@ -122,7 +124,6 @@ Login และรับ JWT token
 ```json
 {
   "username": "newuser",
-  "email": "user@example.com",
   "password": "password123"
 }
 ```
@@ -158,7 +159,6 @@ Authorization: Bearer <token>
 ```json
 {
   "username": "newuser",
-  "email": "user@example.com",
   "password": "password123",
   "role": "user",
   "isActive": true
@@ -175,7 +175,6 @@ Authorization: Bearer <token>
 ```json
 {
   "username": "updateduser",
-  "email": "updated@example.com",
   "role": "admin",
   "isActive": true,
   "password": "newpassword" // optional
@@ -246,9 +245,10 @@ function AdminPage() {
 
 ## หมายเหตุ
 
-- ข้อมูลผู้ใช้ถูกเก็บใน JSON file (`data/users.json`)
-- ไฟล์นี้ถูก ignore โดย git (ดูใน `.gitignore`)
-- สำหรับ production ควรพิจารณาใช้ database จริง
+- ข้อมูลผู้ใช้ถูกเก็บใน Supabase `profiles` table
+- ต้องตั้งค่า environment variables สำหรับ Supabase:
+  - `NEXT_PUBLIC_SUPABASE_URL`
+  - `SUPABASE_SERVICE_ROLE_KEY`
 - ควรตั้งค่า `JWT_SECRET` ที่แข็งแรงใน production
 - ควรเปลี่ยน default admin password หลังจาก login ครั้งแรก
 
@@ -256,7 +256,8 @@ function AdminPage() {
 
 ### ไม่สามารถ login ได้
 - ตรวจสอบว่าได้สร้าง admin user แล้วหรือยัง (`npm run create-admin`)
-- ตรวจสอบว่าไฟล์ `data/users.json` ถูกสร้างแล้ว
+- ตรวจสอบว่า Supabase connection ทำงานได้ (environment variables)
+- ตรวจสอบว่า `profiles` table มี columns ที่จำเป็น (username, password_hash, role, is_active)
 - ตรวจสอบ console logs สำหรับ error messages
 
 ### Token expired

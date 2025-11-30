@@ -101,11 +101,6 @@ export default function ProfilePage() {
             </div>
 
             <div className="space-y-2">
-              <Label>อีเมล</Label>
-              <Input value={user.email} disabled />
-            </div>
-
-            <div className="space-y-2">
               <Label>บทบาท</Label>
               <Input
                 value={user.role === "admin" ? "Admin" : "User"}

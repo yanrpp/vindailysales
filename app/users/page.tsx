@@ -30,7 +30,6 @@ export default function UsersPage() {
   // Form state
   const [formData, setFormData] = useState({
     username: "",
-    email: "",
     password: "",
     role: "user" as "admin" | "user",
     isActive: true,
@@ -86,7 +85,6 @@ export default function UsersPage() {
         setShowCreateForm(false);
         setFormData({
           username: "",
-          email: "",
           password: "",
           role: "user",
           isActive: true,
@@ -122,7 +120,6 @@ export default function UsersPage() {
         setEditingUser(null);
         setFormData({
           username: "",
-          email: "",
           password: "",
           role: "user",
           isActive: true,
@@ -165,7 +162,6 @@ export default function UsersPage() {
     setEditingUser(user);
     setFormData({
       username: user.username,
-      email: user.email,
       password: "",
       role: user.role,
       isActive: user.isActive,
@@ -224,19 +220,6 @@ export default function UsersPage() {
                     value={formData.username}
                     onChange={(e) =>
                       setFormData({ ...formData, username: e.target.value })
-                    }
-                    required
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="email">อีเมล</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={(e) =>
-                      setFormData({ ...formData, email: e.target.value })
                     }
                     required
                   />
@@ -307,7 +290,6 @@ export default function UsersPage() {
                     setEditingUser(null);
                     setFormData({
                       username: "",
-                      email: "",
                       password: "",
                       role: "user",
                       isActive: true,
@@ -342,7 +324,6 @@ export default function UsersPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>ชื่อผู้ใช้</TableHead>
-                    <TableHead>อีเมล</TableHead>
                     <TableHead>บทบาท</TableHead>
                     <TableHead>สถานะ</TableHead>
                     <TableHead>สร้างเมื่อ</TableHead>
@@ -355,7 +336,6 @@ export default function UsersPage() {
                       <TableCell className="font-medium">
                         {user.username}
                       </TableCell>
-                      <TableCell>{user.email}</TableCell>
                       <TableCell>
                         <span
                           className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-medium ${
