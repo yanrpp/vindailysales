@@ -1,9 +1,9 @@
-import jwt from "jsonwebtoken";
+import jwt, { SignOptions } from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { User } from "./user-storage";
 
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
-const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "7d";
+const JWT_SECRET: string = process.env.JWT_SECRET || "your-secret-key-change-in-production";
+const JWT_EXPIRES_IN: string = process.env.JWT_EXPIRES_IN || "7d";
 
 export interface JWTPayload {
   userId: string;
@@ -35,16 +35,32 @@ export function generateToken(user: User): string {
     role: user.role,
   };
 
-  return jwt.sign(payload, JWT_SECRET, {
-    expiresIn: JWT_EXPIRES_IN,
-  });
+  if (!JWT_SECRET) {
+    throw new Error("JWT_SECRET is not configured");
+  }
+
+  const options: SignOptions = {
+    expiresIn: JWT_EXPIRES_IN as SignOptions["expiresIn"],
+  };
+
+  const token = jwt.sign(payload, JWT_SECRET, options);
+  return token;
 }
 
 // ตรวจสอบและ decode JWT token
 export function verifyToken(token: string): JWTPayload | null {
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayload;
-    return decoded;
+    if (!JWT_SECRET) {
+      return null;
+    }
+
+    const decoded = jwt.verify(token, JWT_SECRET);
+    
+    if (typeof decoded === "string") {
+      return null;
+    }
+
+    return decoded as JWTPayload;
   } catch (error) {
     return null;
   }
@@ -54,10 +70,17 @@ export function verifyToken(token: string): JWTPayload | null {
 export function getTokenFromRequest(
   headers: Headers | Record<string, string | string[] | undefined>
 ): string | null {
-  const authHeader =
-    "get" in headers
-      ? headers.get("authorization")
-      : (headers.authorization as string | undefined);
+  let authHeader: string | null = null;
+  
+  if ("get" in headers && typeof headers.get === "function") {
+    authHeader = (headers as Headers).get("authorization");
+  } else {
+    const recordHeaders = headers as Record<string, string | string[] | undefined>;
+    const auth = recordHeaders.authorization;
+    if (auth) {
+      authHeader = Array.isArray(auth) ? auth[0] : auth;
+    }
+  }
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
     return null;
