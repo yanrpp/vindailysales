@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ตรวจสอบ username ซ้ำ
-    const existingUser = findUserByUsername(username);
+    const existingUser = await findUserByUsername(username);
     if (existingUser) {
       return NextResponse.json(
         { error: "Username already exists" },
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password);
 
     // สร้าง user ใหม่ (default role เป็น 'user' ถ้าไม่ระบุ)
-    const newUser = createUser({
+    const newUser = await createUser({
       username,
       passwordHash,
       role: role === "admin" ? "admin" : "user",

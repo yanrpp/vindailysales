@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     }
 
     // หา user
-    const user = findUserByUsername(username);
+    const user = await findUserByUsername(username);
     
     if (!user) {
       return NextResponse.json(
@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     // อัปเดต last login
-    updateLastLogin(user.id);
+    await updateLastLogin(user.id);
 
     // สร้าง token
     const token = generateToken(user);

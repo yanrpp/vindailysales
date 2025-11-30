@@ -32,7 +32,7 @@ export const GET = requireAuth(async (req) => {
       );
     }
 
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -91,7 +91,7 @@ export const PUT = requireAuth(async (req) => {
       }
     }
 
-    const user = findUserById(id);
+    const user = await findUserById(id);
     if (!user) {
       return NextResponse.json({ error: "User not found" }, { status: 404 });
     }
@@ -113,7 +113,7 @@ export const PUT = requireAuth(async (req) => {
     }
 
     // อัปเดต user
-    const updatedUser = updateUser(id, updates);
+    const updatedUser = await updateUser(id, updates);
 
     // ส่ง response (ไม่ส่ง password hash)
     const { passwordHash: _, ...userWithoutPassword } = updatedUser;

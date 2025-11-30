@@ -10,7 +10,7 @@ import { hashPassword } from "@/lib/auth/auth-utils";
 // GET: ดึงรายการ users ทั้งหมด (admin only)
 export const GET = requireAdmin(async (req) => {
   try {
-    const users = getAllUsers();
+    const users = await getAllUsers();
 
     // ไม่ส่ง password hash
     const usersWithoutPassword = users.map(({ passwordHash, ...user }) => user);
@@ -51,7 +51,7 @@ export const POST = requireAdmin(async (req) => {
     }
 
     // ตรวจสอบ username ซ้ำ
-    const existingUser = findUserByUsername(username);
+    const existingUser = await findUserByUsername(username);
     if (existingUser) {
       return NextResponse.json(
         { error: "Username already exists" },
@@ -63,7 +63,7 @@ export const POST = requireAdmin(async (req) => {
     const passwordHash = await hashPassword(password);
 
     // สร้าง user
-    const newUser = createUser({
+    const newUser = await createUser({
       username,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
