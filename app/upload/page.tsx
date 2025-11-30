@@ -72,23 +72,14 @@ export default function UploadPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+    <div className="flex items-center justify-center">
       <Card className="w-full max-w-2xl">
         <CardHeader>
-          <div className="flex justify-between items-center">
-            <div>
-              <CardTitle className="text-2xl font-semibold">Upload Sales Report</CardTitle>
-              <p className="mt-1 text-sm text-gray-600">
-                Upload Excel files to import daily sales data
-              </p>
-            </div>
-            <div className="flex gap-2">
-              <Link href="/">
-                <Button variant="outline" size="sm">
-                  รายการข้อมูล
-                </Button>
-              </Link>
-            </div>
+          <div>
+            <CardTitle className="text-2xl font-semibold">Upload Sales Report</CardTitle>
+            <p className="mt-1 text-sm text-gray-600">
+              Upload Excel files to import daily sales data
+            </p>
           </div>
         </CardHeader>
 

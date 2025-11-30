@@ -332,26 +332,7 @@ export default function DataPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8 py-8 max-w-7xl">
-        {/* Header */}
-        <div className="mb-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-semibold text-gray-900 tracking-tight">
-              รายการข้อมูล
-            </h1>
-            <p className="mt-2 text-sm text-gray-600">
-              View and export daily sales data with filters and sorting
-            </p>
-          </div>
-          <div className="flex gap-2">
-            <Link href="/upload">
-              <Button variant="outline" size="sm">
-                นำเข้าข้อมูล
-              </Button>
-            </Link>
-          </div>
-        </div>
+    <div className="space-y-6">
 
         {/* Filters Card */}
         <Card className="mb-6">
@@ -669,7 +650,6 @@ export default function DataPage() {
             )}
           </CardContent>
         </Card>
-      </div>
     </div>
   );
 }
