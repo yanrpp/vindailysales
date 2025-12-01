@@ -38,12 +38,13 @@ async function createAdminUser() {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // สร้าง admin user
+    // สร้าง admin user (admin user จะได้รับการอนุมัติทันที)
     const adminUser = await createUser({
       username,
       passwordHash,
       role: "admin",
       isActive: true,
+      isApproved: true, // Admin user จะได้รับการอนุมัติทันที
     });
 
     console.log("✅ Admin user created successfully!");
