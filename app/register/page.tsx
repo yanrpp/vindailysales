@@ -15,6 +15,7 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const router = useRouter();
@@ -35,12 +36,24 @@ export default function RegisterPage() {
     }
 
     setLoading(true);
+    setError(null);
+    setSuccess(null);
 
     try {
       await register(username, password);
+      // ถ้าสมัครสำเร็จจะได้ token และ redirect
       router.push("/");
     } catch (err: any) {
-      setError(err.message || "Registration failed. Please try again.");
+      // ถ้า error message บอกว่า pending approval แสดงเป็น success message
+      if (err.message && err.message.includes("pending approval")) {
+        setSuccess(err.message);
+        // Reset form
+        setUsername("");
+        setPassword("");
+        setConfirmPassword("");
+      } else {
+        setError(err.message || "Registration failed. Please try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -60,6 +73,13 @@ export default function RegisterPage() {
             {error && (
               <Alert variant="destructive">
                 <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
+            {success && (
+              <Alert className="bg-blue-50 border-blue-200">
+                <AlertDescription className="text-blue-800">
+                  {success}
+                </AlertDescription>
               </Alert>
             )}
 

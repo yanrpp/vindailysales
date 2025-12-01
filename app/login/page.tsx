@@ -45,8 +45,13 @@ export default function LoginPage() {
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (
-              <Alert variant="destructive">
-                <AlertDescription>{error}</AlertDescription>
+              <Alert 
+                variant={error.includes("pending approval") ? "default" : "destructive"}
+                className={error.includes("pending approval") ? "bg-blue-50 border-blue-200" : ""}
+              >
+                <AlertDescription className={error.includes("pending approval") ? "text-blue-800" : ""}>
+                  {error}
+                </AlertDescription>
               </Alert>
             )}
 

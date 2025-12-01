@@ -33,6 +33,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // ตรวจสอบว่า user ได้รับการอนุมัติหรือไม่
+    if (!user.isApproved) {
+      return NextResponse.json(
+        { 
+          error: "✅ “บัญชีของคุณกำลังรอการอนุมัติ โปรดรอผู้ดูแลระบบอนุมัติก่อนจึงจะสามารถเข้าใช้งานระบบได้”",
+          pendingApproval: true
+        },
+        { status: 403 }
+      );
+    }
+
     // ตรวจสอบ password
     const isValidPassword = await verifyPassword(password, user.passwordHash);
     

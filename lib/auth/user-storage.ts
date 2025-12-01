@@ -8,6 +8,7 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
+  isApproved: boolean;
   lastLogin?: string;
 }
 
@@ -69,6 +70,7 @@ export async function createUser(
         password_hash: userData.passwordHash,
         role: userData.role,
         is_active: userData.isActive,
+        is_approved: userData.isApproved !== undefined ? userData.isApproved : false,
       })
       .select()
       .single();
@@ -112,6 +114,7 @@ export async function updateUser(
       updateData.password_hash = updates.passwordHash;
     if (updates.role !== undefined) updateData.role = updates.role;
     if (updates.isActive !== undefined) updateData.is_active = updates.isActive;
+    if (updates.isApproved !== undefined) updateData.is_approved = updates.isApproved;
     if (updates.lastLogin !== undefined) updateData.last_login = updates.lastLogin;
 
     const { data, error } = await supabase
@@ -197,6 +200,7 @@ function mapSupabaseUserToUser(data: any): User {
     createdAt: data.created_at,
     updatedAt: data.updated_at,
     isActive: data.is_active !== undefined ? data.is_active : true,
+    isApproved: data.is_approved !== undefined ? data.is_approved : false,
     lastLogin: data.last_login || undefined,
   };
 }

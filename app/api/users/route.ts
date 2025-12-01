@@ -62,12 +62,13 @@ export const POST = requireAdmin(async (req) => {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // สร้าง user
+    // สร้าง user (admin สร้าง user ใหม่จะได้รับการอนุมัติทันที)
     const newUser = await createUser({
       username,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: isActive !== undefined ? isActive : true,
+      isApproved: true, // Admin สร้าง user ใหม่จะได้รับการอนุมัติทันที
     });
 
     // ส่ง response (ไม่ส่ง password hash)

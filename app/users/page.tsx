@@ -133,6 +133,30 @@ export default function UsersPage() {
     }
   };
 
+  // อนุมัติ/ปฏิเสธ user
+  const handleApprove = async (userId: string, approved: boolean) => {
+    try {
+      const response = await fetch("/api/users/approve", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ userId, approved }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        loadUsers();
+      } else {
+        setError(data.error || "Failed to update approval status");
+      }
+    } catch (err) {
+      setError("Failed to update approval status");
+    }
+  };
+
   // ลบ user
   const handleDelete = async (id: string) => {
     if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการลบผู้ใช้นี้?")) return;
@@ -304,6 +328,15 @@ export default function UsersPage() {
         </Card>
       )}
 
+      {/* Pending Approval Alert */}
+      {users.filter((u) => !u.isApproved).length > 0 && (
+        <Alert className="bg-yellow-50 border-yellow-200">
+          <AlertDescription className="text-yellow-800">
+            <strong>แจ้งเตือน:</strong> มีผู้ใช้ {users.filter((u) => !u.isApproved).length} คนที่รอการอนุมัติ
+          </AlertDescription>
+        </Alert>
+      )}
+
       {/* Users Table */}
       <Card>
         <CardHeader>
@@ -326,6 +359,7 @@ export default function UsersPage() {
                     <TableHead>ชื่อผู้ใช้</TableHead>
                     <TableHead>บทบาท</TableHead>
                     <TableHead>สถานะ</TableHead>
+                    <TableHead>การอนุมัติ</TableHead>
                     <TableHead>สร้างเมื่อ</TableHead>
                     <TableHead>จัดการ</TableHead>
                   </TableRow>
@@ -359,10 +393,41 @@ export default function UsersPage() {
                         </span>
                       </TableCell>
                       <TableCell>
+                        {user.isApproved ? (
+                          <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-green-100 text-green-800">
+                            อนุมัติแล้ว
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center rounded-full px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800">
+                            รอการอนุมัติ
+                          </span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {new Date(user.createdAt).toLocaleDateString("th-TH")}
                       </TableCell>
                       <TableCell>
-                        <div className="flex gap-2">
+                        <div className="flex gap-2 flex-wrap">
+                          {!user.isApproved && (
+                            <Button
+                              variant="default"
+                              size="sm"
+                              onClick={() => handleApprove(user.id, true)}
+                              className="bg-green-600 hover:bg-green-700"
+                            >
+                              อนุมัติ
+                            </Button>
+                          )}
+                          {user.isApproved && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleApprove(user.id, false)}
+                              className="border-yellow-300 text-yellow-700 hover:bg-yellow-50"
+                            >
+                              ยกเลิกการอนุมัติ
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"

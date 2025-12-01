@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { PendingApprovalNotification } from "./PendingApprovalNotification";
 
 interface TopBarProps {
   title?: string;
@@ -61,6 +62,9 @@ export function TopBar({ title, description, onMenuClick }: TopBarProps) {
       <div className="flex items-center gap-2">
         {isAuthenticated && user ? (
           <>
+            {/* Pending Approval Notification (Admin only) */}
+            {user.role === "admin" && <PendingApprovalNotification />}
+            
             <div className="hidden sm:flex items-center gap-2 text-sm text-blue-900/80">
               <span>{user.username}</span>
               {user.role === "admin" && (

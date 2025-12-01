@@ -92,6 +92,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const data = await response.json();
 
       if (!response.ok) {
+        // ถ้า error มาจาก pending approval ให้ throw error พร้อม message (ไม่ log ใน console)
+        if (data.pendingApproval) {
+          const error = new Error(data.error || "✅ “บัญชีของคุณกำลังรอการอนุมัติ โปรดรอผู้ดูแลระบบอนุมัติก่อนจึงจะสามารถเข้าใช้งานระบบได้”");
+          // ไม่ log error ที่เป็น expected behavior
+          return Promise.reject(error);
+        }
         throw new Error(data.error || "Login failed");
       }
 
@@ -104,7 +110,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Invalid response from server");
       }
     } catch (error: any) {
-      console.error("Login error:", error);
+      // ไม่ log error ที่เป็น expected behavior (pending approval, invalid credentials)
+      // Log เฉพาะ unexpected errors
+      if (!error.message || (!error.message.includes("pending approval") && !error.message.includes("Invalid username or password"))) {
+        console.error("Login error:", error);
+      }
       throw error;
     }
   };
@@ -126,6 +136,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error(data.error || "Registration failed");
       }
 
+      // ถ้าสมัครสำเร็จแต่ยังรอการอนุมัติ (pendingApproval = true)
+      if (data.success && data.pendingApproval) {
+        // ไม่เก็บ token และ user เพราะยังไม่ได้รับการอนุมัติ
+        // ใช้ Promise.reject แทน throw เพื่อไม่ให้ log ใน console
+        const error = new Error(data.message || "Your account is pending approval from an administrator.");
+        return Promise.reject(error);
+      }
+
       if (data.success && data.token && data.user) {
         setToken(data.token);
         setUser(data.user);
@@ -135,7 +153,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Invalid response from server");
       }
     } catch (error: any) {
-      console.error("Register error:", error);
+      // ไม่ log error ที่เป็น expected behavior (pending approval)
+      // Log เฉพาะ unexpected errors
+      if (!error.message || !error.message.includes("pending approval")) {
+        console.error("Register error:", error);
+      }
       throw error;
     }
   };

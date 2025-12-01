@@ -36,23 +36,24 @@ export async function POST(req: NextRequest) {
     const passwordHash = await hashPassword(password);
 
     // สร้าง user ใหม่ (default role เป็น 'user' ถ้าไม่ระบุ)
+    // ผู้ใช้ที่สมัครใหม่ต้องรอการอนุมัติจาก admin (isApproved = false)
     const newUser = await createUser({
       username,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: true,
+      isApproved: false, // ต้องรอการอนุมัติจาก admin
     });
 
-    // สร้าง token
-    const token = generateToken(newUser);
-
+    // ไม่สร้าง token ให้ผู้ใช้ที่ยังไม่ได้รับการอนุมัติ
     // ส่ง response (ไม่ส่ง password hash)
     const { passwordHash: _, ...userWithoutPassword } = newUser;
 
     return NextResponse.json(
       {
         success: true,
-        token,
+        message: "✅ “ลงทะเบียนสำเร็จแล้ว บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ”",
+        pendingApproval: true,
         user: userWithoutPassword,
       },
       { status: 201 }
