@@ -1,10 +1,12 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-context";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { PendingApprovalNotification } from "./PendingApprovalNotification";
+import { User, LogOut, ChevronDown } from "lucide-react";
 
 interface TopBarProps {
   title?: string;
@@ -15,11 +17,31 @@ interface TopBarProps {
 export function TopBar({ title, description, onMenuClick }: TopBarProps) {
   const { user, isAuthenticated, logout } = useAuth();
   const router = useRouter();
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   const handleLogout = () => {
     logout();
     router.push("/login");
+    setIsDropdownOpen(false);
   };
+
+  // ปิด dropdown เมื่อคลิกข้างนอก
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    if (isDropdownOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isDropdownOpen]);
 
   return (
     <header className="sticky top-0 z-30 flex h-16 items-center gap-4 bg-gradient-to-r from-blue-50 to-white backdrop-blur-sm shadow-sm px-4 lg:px-6">
@@ -65,24 +87,68 @@ export function TopBar({ title, description, onMenuClick }: TopBarProps) {
             {/* Pending Approval Notification (Admin only) */}
             {user.role === "admin" && <PendingApprovalNotification />}
             
-            <div className="hidden sm:flex items-center gap-2 text-sm text-blue-900/80">
-              <span>{user.username}</span>
-              {user.role === "admin" && (
-                <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
-                  Admin
-                </span>
+            {/* User Dropdown Menu */}
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-blue-100/70 transition-colors"
+              >
+                <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
+                  <span className="text-xs font-medium text-blue-700">
+                    {user.username.charAt(0).toUpperCase()}
+                  </span>
+                </div>
+                <div className="hidden sm:flex flex-col items-start">
+                  <span className="text-sm font-medium text-blue-900/80">
+                    {user.username}
+                  </span>
+                  {user.role === "admin" && (
+                    <span className="text-xs text-blue-600">Admin</span>
+                  )}
+                </div>
+                <ChevronDown className={`h-4 w-4 text-blue-700 transition-transform ${isDropdownOpen ? "rotate-180" : ""}`} />
+              </button>
+
+              {/* Dropdown Menu */}
+              {isDropdownOpen && (
+                <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-lg border border-gray-200 z-50">
+                  <div className="p-3 border-b border-gray-200">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
+                        <span className="text-sm font-medium text-blue-700">
+                          {user.username.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">
+                          {user.username}
+                        </p>
+                        <p className="text-xs text-gray-500">
+                          {user.role === "admin" ? "Administrator" : "User"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="p-1">
+                    <Link
+                      href="/profile"
+                      onClick={() => setIsDropdownOpen(false)}
+                      className="flex items-center gap-2 px-3 py-2 text-sm text-gray-700 rounded-md hover:bg-blue-50 hover:text-blue-700 transition-colors"
+                    >
+                      <User className="h-4 w-4" />
+                      <span>โปรไฟล์</span>
+                    </Link>
+                    <button
+                      onClick={handleLogout}
+                      className="w-full flex items-center gap-2 px-3 py-2 text-sm text-red-600 rounded-md hover:bg-red-50 hover:text-red-700 transition-colors"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      <span>ออกจากระบบ</span>
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
-            <Link href="/profile">
-              <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center cursor-pointer hover:bg-blue-200 transition-colors">
-                <span className="text-xs font-medium text-blue-700">
-                  {user.username.charAt(0).toUpperCase()}
-                </span>
-              </div>
-            </Link>
-            <Button variant="ghost" size="sm" onClick={handleLogout} className="text-red-600 hover:text-red-700 hover:bg-red-50">
-              ออกจากระบบ
-            </Button>
           </>
         ) : (
           <Link href="/login">
