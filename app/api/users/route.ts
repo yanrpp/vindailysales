@@ -33,17 +33,20 @@ export const GET = requireAdmin(async (req) => {
 export const POST = requireAdmin(async (req) => {
   try {
     const body = await req.json();
-    const { username, password, role, isActive } = body;
+    const { username, password, name, role, isActive } = body;
 
     // ตรวจสอบ input
-    if (!username || !password) {
+    if (!username) {
       return NextResponse.json(
-        { error: "Username and password are required" },
+        { error: "Username is required" },
         { status: 400 }
       );
     }
 
-    if (password.length < 6) {
+    // ใช้ default password "user1234" ถ้าไม่ระบุ
+    const userPassword = password || "user1234";
+
+    if (userPassword.length < 6) {
       return NextResponse.json(
         { error: "Password must be at least 6 characters" },
         { status: 400 }
@@ -60,11 +63,12 @@ export const POST = requireAdmin(async (req) => {
     }
 
     // Hash password
-    const passwordHash = await hashPassword(password);
+    const passwordHash = await hashPassword(userPassword);
 
     // สร้าง user (admin สร้าง user ใหม่จะได้รับการอนุมัติทันที)
     const newUser = await createUser({
       username,
+      name: name || undefined,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: isActive !== undefined ? isActive : true,

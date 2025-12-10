@@ -11,6 +11,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import Link from "next/link";
 
 export default function RegisterPage() {
+  const [name, setName] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -23,6 +24,13 @@ export default function RegisterPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+
+    // ตรวจสอบ username ต้องเป็นตัวอักษรภาษาอังกฤษเท่านั้น
+    const usernameRegex = /^[a-zA-Z0-9_]+$/;
+    if (username && !usernameRegex.test(username)) {
+      setError("User Name ต้องเป็นตัวอักษรภาษาอังกฤษ ตัวเลข และ _ เท่านั้น");
+      return;
+    }
 
     // ตรวจสอบ password match
     if (password !== confirmPassword) {
@@ -40,7 +48,7 @@ export default function RegisterPage() {
     setSuccess(null);
 
     try {
-      await register(username, password);
+      await register(username, password, name || undefined);
       // ถ้าสมัครสำเร็จจะได้ token และ redirect
       router.push("/");
     } catch (err: any) {
@@ -48,6 +56,7 @@ export default function RegisterPage() {
       if (err.message && err.message.includes("pending approval")) {
         setSuccess(err.message);
         // Reset form
+        setName("");
         setUsername("");
         setPassword("");
         setConfirmPassword("");
@@ -84,15 +93,33 @@ export default function RegisterPage() {
             )}
 
             <div className="space-y-2">
-              <Label htmlFor="username">ชื่อผู้ใช้</Label>
+              <Label htmlFor="name">ชื่อ</Label>
+              <Input
+                id="name"
+                type="text"
+                placeholder="กรุณากรอกชื่อ"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={loading}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="username">User Name</Label>
               <Input
                 id="username"
                 type="text"
-                placeholder="กรุณากรอกชื่อผู้ใช้"
+                placeholder="กรุณากรอก User Name (ภาษาอังกฤษเท่านั้น)"
                 value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                onChange={(e) => {
+                  // อนุญาตเฉพาะตัวอักษรภาษาอังกฤษ ตัวเลข และ _
+                  const value = e.target.value.replace(/[^a-zA-Z0-9_]/g, "");
+                  setUsername(value);
+                }}
                 required
                 disabled={loading}
+                pattern="[a-zA-Z0-9_]+"
+                title="User Name ต้องเป็นตัวอักษรภาษาอังกฤษ ตัวเลข และ _ เท่านั้น"
               />
             </div>
 

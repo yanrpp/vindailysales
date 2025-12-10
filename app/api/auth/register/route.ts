@@ -5,7 +5,7 @@ import { hashPassword, generateToken } from "@/lib/auth/auth-utils";
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { username, password, role } = body;
+    const { username, password, name, role } = body;
 
     // ตรวจสอบ input
     if (!username || !password) {
@@ -39,6 +39,7 @@ export async function POST(req: NextRequest) {
     // ผู้ใช้ที่สมัครใหม่ต้องรอการอนุมัติจาก admin (isApproved = false)
     const newUser = await createUser({
       username,
+      name: name || undefined,
       passwordHash,
       role: role === "admin" ? "admin" : "user",
       isActive: true,

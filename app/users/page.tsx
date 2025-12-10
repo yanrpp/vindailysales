@@ -16,7 +16,15 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { User } from "@/lib/auth/user-storage";
+import { CheckCircle2 } from "lucide-react";
 
 export default function UsersPage() {
   useProtectedRoute({ requireAdmin: true });
@@ -26,11 +34,13 @@ export default function UsersPage() {
   const [error, setError] = useState<string | null>(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
 
   // Form state
   const [formData, setFormData] = useState({
     username: "",
-    password: "",
+    name: "",
     role: "user" as "admin" | "user",
     isActive: true,
   });
@@ -64,19 +74,33 @@ export default function UsersPage() {
     }
   }, [isAdmin, token]);
 
+  // ปิด success modal อัตโนมัติหลังจาก 2 วินาที
+  useEffect(() => {
+    if (showSuccessModal) {
+      const timer = setTimeout(() => {
+        setShowSuccessModal(false);
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [showSuccessModal]);
+
   // สร้าง user ใหม่
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
     try {
+      // ใช้ default password "user1234" เมื่อสร้าง user ใหม่
       const response = await fetch("/api/users", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify(formData),
+        body: JSON.stringify({
+          ...formData,
+          password: "user1234", // ใช้ default password
+        }),
       });
 
       const data = await response.json();
@@ -85,10 +109,12 @@ export default function UsersPage() {
         setShowCreateForm(false);
         setFormData({
           username: "",
-          password: "",
+          name: "",
           role: "user",
           isActive: true,
         });
+        setSuccessMessage("สร้างผู้ใช้สำเร็จ");
+        setShowSuccessModal(true);
         loadUsers();
       } else {
         setError(data.error || "Failed to create user");
@@ -120,10 +146,12 @@ export default function UsersPage() {
         setEditingUser(null);
         setFormData({
           username: "",
-          password: "",
+          name: "",
           role: "user",
           isActive: true,
         });
+        setSuccessMessage("อัปเดตข้อมูลผู้ใช้สำเร็จ");
+        setShowSuccessModal(true);
         loadUsers();
       } else {
         setError(data.error || "Failed to update user");
@@ -186,11 +214,38 @@ export default function UsersPage() {
     setEditingUser(user);
     setFormData({
       username: user.username,
-      password: "",
+      name: user.name || "",
       role: user.role,
       isActive: user.isActive,
     });
     setShowCreateForm(false);
+  };
+
+  // รีเซ็ต password
+  const handleResetPassword = async (userId: string) => {
+    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการรีเซ็ตรหัสผ่านเป็น 'user1234'?")) return;
+
+    try {
+      const response = await fetch(`/api/users/${userId}/reset-password`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.success) {
+        setSuccessMessage("รีเซ็ตรหัสผ่านสำเร็จ: user1234");
+        setShowSuccessModal(true);
+        loadUsers();
+      } else {
+        setError(data.error || "Failed to reset password");
+      }
+    } catch (err) {
+      setError("Failed to reset password");
+    }
   };
 
   if (!isAdmin) {
@@ -238,7 +293,7 @@ export default function UsersPage() {
             >
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="username">ชื่อผู้ใช้</Label>
+                  <Label htmlFor="username">User Name</Label>
                   <Input
                     id="username"
                     value={formData.username}
@@ -250,18 +305,13 @@ export default function UsersPage() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="password">
-                    รหัสผ่าน {editingUser && "(เว้นว่างไว้ถ้าไม่ต้องการเปลี่ยน)"}
-                  </Label>
+                  <Label htmlFor="name">ชื่อ</Label>
                   <Input
-                    id="password"
-                    type="password"
-                    value={formData.password}
+                    id="name"
+                    value={formData.name}
                     onChange={(e) =>
-                      setFormData({ ...formData, password: e.target.value })
+                      setFormData({ ...formData, name: e.target.value })
                     }
-                    required={!editingUser}
-                    minLength={6}
                   />
                 </div>
 
@@ -314,7 +364,7 @@ export default function UsersPage() {
                     setEditingUser(null);
                     setFormData({
                       username: "",
-                      password: "",
+                      name: "",
                       role: "user",
                       isActive: true,
                     });
@@ -356,7 +406,8 @@ export default function UsersPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>ชื่อผู้ใช้</TableHead>
+                    <TableHead>User Name</TableHead>
+                    <TableHead>ชื่อ</TableHead>
                     <TableHead>บทบาท</TableHead>
                     <TableHead>สถานะ</TableHead>
                     <TableHead>การอนุมัติ</TableHead>
@@ -369,6 +420,9 @@ export default function UsersPage() {
                     <TableRow key={user.id}>
                       <TableCell className="font-medium">
                         {user.username}
+                      </TableCell>
+                      <TableCell>
+                        {user.name || "-"}
                       </TableCell>
                       <TableCell>
                         <span
@@ -436,6 +490,14 @@ export default function UsersPage() {
                             แก้ไข
                           </Button>
                           <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleResetPassword(user.id)}
+                            className="border-blue-300 text-blue-700 hover:bg-blue-50"
+                          >
+                            รีเซ็ต Password
+                          </Button>
+                          <Button
                             variant="destructive"
                             size="sm"
                             onClick={() => handleDelete(user.id)}
@@ -452,6 +514,30 @@ export default function UsersPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Success Modal */}
+      <Dialog open={showSuccessModal} onOpenChange={setShowSuccessModal}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="h-10 w-10 rounded-full bg-green-100 flex items-center justify-center">
+                <CheckCircle2 className="h-6 w-6 text-green-600" />
+              </div>
+              <DialogTitle className="text-lg font-semibold">
+                สำเร็จ
+              </DialogTitle>
+            </div>
+            <DialogDescription className="pt-2 text-base">
+              {successMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end pt-4">
+            <Button onClick={() => setShowSuccessModal(false)}>
+              ตกลง
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

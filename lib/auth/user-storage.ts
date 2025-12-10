@@ -3,6 +3,7 @@ import { supabase } from "@/lib/supabase";
 export interface User {
   id: string;
   username: string;
+  name?: string;
   passwordHash: string;
   role: "admin" | "user";
   createdAt: string;
@@ -67,6 +68,7 @@ export async function createUser(
       .from("users")
       .insert({
         username: userData.username,
+        name: userData.name || null,
         password_hash: userData.passwordHash,
         role: userData.role,
         is_active: userData.isActive,
@@ -110,6 +112,7 @@ export async function updateUser(
 
     const updateData: any = {};
     if (updates.username !== undefined) updateData.username = updates.username;
+    if (updates.name !== undefined) updateData.name = updates.name;
     if (updates.passwordHash !== undefined)
       updateData.password_hash = updates.passwordHash;
     if (updates.role !== undefined) updateData.role = updates.role;
@@ -195,6 +198,7 @@ function mapSupabaseUserToUser(data: any): User {
   return {
     id: data.id,
     username: data.username,
+    name: data.name || undefined,
     passwordHash: data.password_hash,
     role: data.role || "user",
     createdAt: data.created_at,

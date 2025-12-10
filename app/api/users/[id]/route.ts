@@ -71,7 +71,7 @@ export const PUT = requireAuth(async (req) => {
     }
 
     const body = await req.json();
-    const { username, role, isActive, password } = body;
+    const { username, name, role, isActive } = body;
 
     // ตรวจสอบสิทธิ์: user สามารถแก้ไขข้อมูลตัวเองได้ (ยกเว้น role) หรือ admin แก้ไขได้ทุกคน
     if (req.user.userId !== id && req.user.role !== "admin") {
@@ -99,18 +99,10 @@ export const PUT = requireAuth(async (req) => {
     // เตรียมข้อมูลสำหรับอัปเดต
     const updates: any = {};
     if (username !== undefined) updates.username = username;
+    if (name !== undefined) updates.name = name;
     if (role !== undefined && req.user.role === "admin") updates.role = role;
     if (isActive !== undefined && req.user.role === "admin")
       updates.isActive = isActive;
-    if (password !== undefined) {
-      if (password.length < 6) {
-        return NextResponse.json(
-          { error: "Password must be at least 6 characters" },
-          { status: 400 }
-        );
-      }
-      updates.passwordHash = await hashPassword(password);
-    }
 
     // อัปเดต user
     const updatedUser = await updateUser(id, updates);

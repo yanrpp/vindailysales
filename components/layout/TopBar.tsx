@@ -20,6 +20,10 @@ export function TopBar({ title, description, onMenuClick }: TopBarProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
+  // ใช้ name ถ้ามี ไม่เช่นนั้นใช้ username
+  const displayName = user?.name || user?.username || "";
+  const displayInitial = displayName.charAt(0).toUpperCase();
+
   const handleLogout = () => {
     logout();
     router.push("/login");
@@ -95,12 +99,12 @@ export function TopBar({ title, description, onMenuClick }: TopBarProps) {
               >
                 <div className="h-8 w-8 rounded-full bg-blue-100 flex items-center justify-center">
                   <span className="text-xs font-medium text-blue-700">
-                    {user.username.charAt(0).toUpperCase()}
+                    {displayInitial}
                   </span>
                 </div>
                 <div className="hidden sm:flex flex-col items-start">
                   <span className="text-sm font-medium text-blue-900/80">
-                    {user.username}
+                    {displayName}
                   </span>
                   {user.role === "admin" && (
                     <span className="text-xs text-blue-600">Admin</span>
@@ -116,12 +120,12 @@ export function TopBar({ title, description, onMenuClick }: TopBarProps) {
                     <div className="flex items-center gap-3">
                       <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
                         <span className="text-sm font-medium text-blue-700">
-                          {user.username.charAt(0).toUpperCase()}
+                          {displayInitial}
                         </span>
                       </div>
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">
-                          {user.username}
+                          {displayName}
                         </p>
                         <p className="text-xs text-gray-500">
                           {user.role === "admin" ? "Administrator" : "User"}

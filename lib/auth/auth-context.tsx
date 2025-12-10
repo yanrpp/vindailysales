@@ -8,7 +8,7 @@ interface AuthContextType {
   token: string | null;
   loading: boolean;
   login: (username: string, password: string) => Promise<void>;
-  register: (username: string, password: string) => Promise<void>;
+  register: (username: string, password: string, name?: string) => Promise<void>;
   logout: () => void;
   updateUser: (userData: Partial<User>) => void;
   isAuthenticated: boolean;
@@ -120,20 +120,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   // Register
-  const register = async (username: string, password: string) => {
+  const register = async (username: string, password: string, name?: string) => {
     try {
       const response = await fetch("/api/auth/register", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username, password, name }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Registration failed");
+        // ใช้ Promise.reject แทน throw เพื่อไม่ให้ log expected errors ใน console
+        const error = new Error(data.error || "Registration failed");
+        return Promise.reject(error);
       }
 
       // ถ้าสมัครสำเร็จแต่ยังรอการอนุมัติ (pendingApproval = true)
@@ -153,9 +155,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("Invalid response from server");
       }
     } catch (error: any) {
-      // ไม่ log error ที่เป็น expected behavior (pending approval)
+      // ไม่ log error ที่เป็น expected behavior (pending approval, username already exists, validation errors)
       // Log เฉพาะ unexpected errors
-      if (!error.message || !error.message.includes("pending approval")) {
+      const isExpectedError = 
+        error.message?.includes("pending approval") ||
+        error.message?.includes("Username already exists") ||
+        error.message?.includes("Password must be at least") ||
+        error.message?.includes("Username and password are required");
+      
+      if (!isExpectedError) {
         console.error("Register error:", error);
       }
       throw error;

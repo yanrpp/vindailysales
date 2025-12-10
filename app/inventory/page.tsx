@@ -83,13 +83,19 @@ interface DashboardData {
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
 
 export default function InventoryDashboardPage() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    // ดึงข้อมูลเฉพาะเมื่อ login แล้ว
+    if (!isAuthenticated) {
+      setLoading(false);
+      return;
+    }
+
     const loadStats = async () => {
       try {
         // ดึงสถิติพื้นฐาน
@@ -132,7 +138,7 @@ export default function InventoryDashboardPage() {
     };
 
     loadStats();
-  }, []);
+  }, [isAuthenticated]);
 
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat("th-TH", {
@@ -153,6 +159,38 @@ export default function InventoryDashboardPage() {
     return storeMapping[storeCode] || storeCode;
   };
 
+  // แสดง loading หรือข้อความแจ้งเตือนถ้ายังไม่ได้ login
+  if (authLoading) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Skeleton className="h-8 w-64" />
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <div className="container mx-auto px-4 py-8 max-w-7xl">
+        <Card>
+          <CardContent className="p-12 text-center">
+            <AlertTriangle className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+            <h2 className="text-2xl font-semibold text-gray-900 mb-2">
+              ต้องเข้าสู่ระบบเพื่อดู Dashboard
+            </h2>
+            <p className="text-gray-600 mb-6">
+              กรุณาเข้าสู่ระบบเพื่อดูข้อมูล Dashboard และสถิติต่างๆ
+            </p>
+            <Link href="/login">
+              <Button>เข้าสู่ระบบ</Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-4 py-8 max-w-7xl">
       <div className="mb-8">
@@ -165,8 +203,9 @@ export default function InventoryDashboardPage() {
         </p>
       </div>
 
-      {/* Statistics Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+      {/* Statistics Cards - แสดงเฉพาะเมื่อ login แล้ว */}
+      {isAuthenticated && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <Card>
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
@@ -222,10 +261,12 @@ export default function InventoryDashboardPage() {
             </div>
           </CardContent>
         </Card>
-      </div>
+        </div>
+      )}
 
-      {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+      {/* Charts Grid - แสดงเฉพาะเมื่อ login แล้ว */}
+      {isAuthenticated && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
         {/* กราฟแสดงมูลค่าตามหมวดหมู่ */}
         <Card>
           <CardHeader>
@@ -370,7 +411,8 @@ export default function InventoryDashboardPage() {
             </CardContent>
           </Card>
         )}
-      </div>
+        </div>
+      )}
 
       {/* Top Products and Expired Products - แสดงเฉพาะเมื่อ login แล้ว */}
       {isAuthenticated && (
