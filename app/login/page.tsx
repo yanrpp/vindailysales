@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/lib/auth/auth-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -15,8 +15,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const { login } = useAuth();
+  const { login, isAuthenticated } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  // ถ้า login อยู่แล้วให้ redirect ไปหน้าที่ต้องการหรือหน้าแรก
+  useEffect(() => {
+    if (isAuthenticated) {
+      const redirectTo = searchParams.get("redirect") || "/";
+      router.push(redirectTo);
+    }
+  }, [isAuthenticated, router, searchParams]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -25,7 +34,9 @@ export default function LoginPage() {
 
     try {
       await login(username, password);
-      router.push("/");
+      // Redirect ไปหน้าที่ต้องการหรือหน้าแรก
+      const redirectTo = searchParams.get("redirect") || "/";
+      router.push(redirectTo);
     } catch (err: any) {
       setError(err.message || "Login failed. Please try again.");
     } finally {

@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
-import { usePathname } from "next/navigation";
+import { useState, useEffect } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface AppLayoutProps {
   children: React.ReactNode;
@@ -12,17 +13,40 @@ interface AppLayoutProps {
   description?: string;
 }
 
-// หน้าเหล่านี้ไม่ต้องแสดง sidebar และ topbar
+// หน้าเหล่านี้ไม่ต้องแสดง sidebar และ topbar และไม่ต้องตรวจสอบ authentication
 const publicPages = ["/login", "/register"];
 
 export function AppLayout({ children, title, description }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const pathname = usePathname();
+  const router = useRouter();
+  const { isAuthenticated, loading } = useAuth();
   const isPublicPage = publicPages.includes(pathname);
+
+  // ตรวจสอบ authentication และ redirect ถ้ายังไม่ได้ login
+  useEffect(() => {
+    if (!loading && !isPublicPage && !isAuthenticated) {
+      // เก็บ URL ปัจจุบันไว้ใน query parameter เพื่อ redirect กลับมาหลัง login
+      const redirectUrl = pathname !== "/" ? `/login?redirect=${encodeURIComponent(pathname)}` : "/login";
+      router.push(redirectUrl);
+    }
+  }, [isAuthenticated, loading, isPublicPage, pathname, router]);
 
   // ถ้าเป็น public page (login/register) ให้แสดงแค่ children
   if (isPublicPage) {
     return <>{children}</>;
+  }
+
+  // ถ้ายัง loading หรือยังไม่ได้ login ให้แสดง loading state
+  if (loading || !isAuthenticated) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600">กำลังโหลด...</p>
+        </div>
+      </div>
+    );
   }
 
   return (
