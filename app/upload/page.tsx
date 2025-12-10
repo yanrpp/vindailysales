@@ -78,7 +78,7 @@ export default function UploadPage() {
           <div>
             <CardTitle className="text-2xl font-semibold">Upload Sales Report</CardTitle>
             <p className="mt-1 text-sm text-gray-600">
-              Upload Excel files to import daily sales data
+              Upload Excel files to import drug data
             </p>
           </div>
         </CardHeader>

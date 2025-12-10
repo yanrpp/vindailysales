@@ -3,7 +3,12 @@ import { AppLayout } from "@/components/layout/AppLayout";
 import { AuthProvider } from "@/lib/auth/auth-context";
 
 export const metadata = {
-  title: "Daily Sales Management",
+  title: "Drug Management",
+  icons: {
+    icon: "/img/vin.png",
+    shortcut: "/img/vin.png",
+    apple: "/img/vin.png",
+  },
 };
 
 export default function RootLayout({

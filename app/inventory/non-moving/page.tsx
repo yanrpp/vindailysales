@@ -81,6 +81,7 @@ export default function NonMovingPage() {
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(new Set());
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [dateReport, setDateReport] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -118,6 +119,15 @@ export default function NonMovingPage() {
           const apiTopStores = json.filters.top_stores || [];
           setTopStores(apiTopStores);
           setActualStores(apiTopStores); // ใช้ top_stores จาก API ที่คำนวณจากข้อมูลทั้งหมดที่ filter แล้ว
+        }
+        // ดึงวันที่รายงานที่เลือก (ถ้ามี)
+        if (selectedDateReport) {
+          const selectedReport = json.filters?.date_reports?.find((dr: DateReport) => dr.id === selectedDateReport);
+          setDateReport(selectedReport ? selectedReport.detail_date : null);
+        } else {
+          // ถ้าไม่เลือก ให้ใช้ล่าสุด
+          const latestReport = json.filters?.date_reports?.[0];
+          setDateReport(latestReport ? latestReport.detail_date : null);
         }
         } else {
           setError(json.error || "Failed to load data");
@@ -801,6 +811,23 @@ export default function NonMovingPage() {
           </div>
         </CardHeader>
         <CardContent>
+          {data.length > 0 && (
+            <div className="mb-4 flex items-center gap-4 text-sm text-gray-600">
+              <span>
+                แสดง {(pagination.page - 1) * pagination.pageSize + 1} ถึง{" "}
+                {Math.min(pagination.page * pagination.pageSize, pagination.total)} จาก{" "}
+                {pagination.total} รายการ
+              </span>
+              {dateReport && (
+                <>
+                  <span className="text-gray-400">•</span>
+                  <span className="text-gray-700">
+                    วันที่รายงาน: <span className="font-semibold text-blue-600">{dateReport}</span>
+                  </span>
+                </>
+              )}
+            </div>
+          )}
           {loading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -830,13 +857,13 @@ export default function NonMovingPage() {
                 <TableHeader>
                     <TableRow className="bg-blue-50">
                       <TableHead className="w-12" rowSpan={2}></TableHead>
+                      <TableHead rowSpan={2}>หมวดหมู่</TableHead>
                       <TableHead rowSpan={2}>รหัสสินค้า</TableHead>
                       <TableHead rowSpan={2}>รายละเอียด</TableHead>
                       <TableHead rowSpan={2}>หน่วย</TableHead>
                       <TableHead rowSpan={2}>ราคา/หน่วย</TableHead>
                       <TableHead colSpan={actualStores.length || 5} className="text-center">จำนวนแต่ละ store(รวม)</TableHead>
-                      <TableHead rowSpan={2}>หมวดหมู่</TableHead>
-                      <TableHead rowSpan={2}>วันที่รายงาน</TableHead>
+                      <TableHead rowSpan={2} className="text-right">รวมจำนวน</TableHead>
                       <TableHead rowSpan={2} className="text-right">จำนวน LOT</TableHead>
                       <TableHead rowSpan={2} className="text-right">รวม</TableHead>
                     </TableRow>
@@ -864,6 +891,7 @@ export default function NonMovingPage() {
                               {expandedProducts.has(product.id) ? "−" : "+"}
                             </Button>
                           </TableCell>
+                          <TableCell>{product.item_type || "-"}</TableCell>
                           <TableCell className="font-medium">
                         <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                               {product.product_code}
@@ -887,16 +915,9 @@ export default function NonMovingPage() {
                               </TableCell>
                             );
                           })}
-                          <TableCell>{product.item_type || "-"}</TableCell>
-                          <TableCell>
-                            {product.date_report ? (
-                              <span className="text-sm text-blue-600">
-                                {product.date_report.detail_date}
-                              </span>
-                            ) : (
-                              "-"
-                            )}
-                      </TableCell>
+                          <TableCell className="text-right font-semibold text-blue-600">
+                            {product.total_qty ? Math.round(product.total_qty).toLocaleString() : "-"}
+                          </TableCell>
                       <TableCell className="text-right font-semibold">
                             {product.total_lots}
                           </TableCell>

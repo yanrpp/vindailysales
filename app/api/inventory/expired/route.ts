@@ -7,13 +7,16 @@ import { supabase } from "@/lib/supabase";
  */
 export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = new URL(req.url);
+    const dateReportId = searchParams.get("date_report_id");
+    
     // ดึงข้อมูลสินค้าหมดอายุ
     const { data, error } = await supabase.rpc("get_expired_items");
 
     if (error) {
       // ถ้ายังไม่มี function ให้ใช้ query แทน
       // ใช้ product_lots โดยตรง (qty เก็บไว้ใน product_lots แล้ว)
-      const { data: queryData, error: queryError } = await supabase
+      let query = supabase
         .from("product_lots")
         .select(
           `
@@ -25,12 +28,19 @@ export async function GET(req: NextRequest) {
           products!inner(
             id,
             product_code,
-            description
+            description,
+            id_date
           )
         `
         )
-        .lt("exp", new Date().toISOString().split("T")[0])
-        .order("exp", { ascending: true });
+        .lt("exp", new Date().toISOString().split("T")[0]);
+      
+      // Filter by date_report_id ถ้ามี
+      if (dateReportId) {
+        query = query.eq("products.id_date", dateReportId);
+      }
+      
+      const { data: queryData, error: queryError } = await query.order("exp", { ascending: true });
 
       if (queryError) {
         return NextResponse.json(
@@ -47,15 +57,29 @@ export async function GET(req: NextRequest) {
         total_qty: parseFloat(lot.qty) || 0,
       }));
 
+      // ดึงรายการ date_reports ทั้งหมดสำหรับ dropdown
+      const { data: allDateReports } = await supabase
+        .from("date_report")
+        .select("id, detail_date")
+        .order("detail_date", { ascending: false });
+
       return NextResponse.json({
         success: true,
         data: expiredItems,
+        dateReports: allDateReports || [],
       });
     }
+
+    // ดึงรายการ date_reports ทั้งหมดสำหรับ dropdown
+    const { data: allDateReports } = await supabase
+      .from("date_report")
+      .select("id, detail_date")
+      .order("detail_date", { ascending: false });
 
     return NextResponse.json({
       success: true,
       data: data || [],
+      dateReports: allDateReports || [],
     });
   } catch (error: any) {
     console.error("Get expired items error:", error);

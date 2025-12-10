@@ -16,6 +16,8 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import Link from "next/link";
 import ExcelJS from "exceljs";
+import { UploadModal } from "@/components/upload/UploadModal";
+import { Upload } from "lucide-react";
 
 interface TableRowData {
   no: number;
@@ -56,6 +58,7 @@ export default function DataPage() {
   const [error, setError] = useState<string | null>(null);
   const [reportDates, setReportDates] = useState<string[]>([]);
   const [availableDates, setAvailableDates] = useState<string[]>([]);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   // ดึงรายการ report_date ที่มีในระบบ
   useEffect(() => {
@@ -83,6 +86,19 @@ export default function DataPage() {
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
 
+
+  // Reload available dates after upload
+  const reloadDates = useCallback(async () => {
+    try {
+      const response = await fetch("/api/report-dates");
+      const json = await response.json();
+      if (response.ok && json.dates) {
+        setAvailableDates(json.dates);
+      }
+    } catch (err) {
+      console.error("Error loading dates:", err);
+    }
+  }, []);
 
   // ดึงข้อมูล
   const loadData = useCallback(async () => {
@@ -333,6 +349,15 @@ export default function DataPage() {
 
   return (
     <div className="space-y-6">
+      {/* Upload Modal */}
+      <UploadModal
+        open={uploadModalOpen}
+        onOpenChange={setUploadModalOpen}
+        onUploadSuccess={() => {
+          // Reload available dates after successful upload
+          reloadDates();
+        }}
+      />
 
         {/* Filters Card */}
         <Card className="mb-6">
@@ -446,6 +471,15 @@ export default function DataPage() {
 
               {/* Export Buttons */}
               <div className="flex gap-2 ml-auto flex-wrap">
+                <Button
+                  onClick={() => setUploadModalOpen(true)}
+                  variant="default"
+                  size="sm"
+                  className="bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  Upload
+                </Button>
                 <Button
                   onClick={exportToExcel}
                   disabled={data.length === 0}

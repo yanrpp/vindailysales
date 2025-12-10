@@ -290,6 +290,7 @@ export async function POST(req: NextRequest) {
                   .update({
                     exp: expStr,
                     qty: rec.qty || 0,
+                    store: rec.store_location || null,
                   })
                   .eq("id", existingLot.id);
 
@@ -315,6 +316,7 @@ export async function POST(req: NextRequest) {
                     lot_no: rec.lot_no,
                     exp: expStr,
                     qty: rec.qty || 0,
+                    store: rec.store_location || null,
                   });
 
                 if (insertError) {

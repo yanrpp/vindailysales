@@ -105,7 +105,7 @@ export function UploadModal({ open, onOpenChange, onUploadSuccess }: UploadModal
             Upload Sales Report
           </DialogTitle>
           <DialogDescription>
-            Upload Excel files to import daily sales data
+            Upload Excel files to import drug data
           </DialogDescription>
         </DialogHeader>
 

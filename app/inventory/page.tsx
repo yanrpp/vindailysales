@@ -29,6 +29,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { TrendingUp, Package, AlertTriangle, DollarSign, BarChart3 } from "lucide-react";
+import { useAuth } from "@/lib/auth/auth-context";
 
 interface DashboardStats {
   totalProducts: number;
@@ -82,6 +83,7 @@ interface DashboardData {
 const COLORS = ["#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#ec4899", "#06b6d4", "#84cc16"];
 
 export default function InventoryDashboardPage() {
+  const { isAuthenticated } = useAuth();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [dashboardData, setDashboardData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -289,89 +291,191 @@ export default function InventoryDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* กราฟแสดงแนวโน้มตามวันที่รายงาน */}
-        <Card>
-          <CardHeader>
-            <CardTitle>แนวโน้มมูลค่าตามวันที่รายงาน</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-64 w-full" />
-            ) : dashboardData?.dateReportStats ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={dashboardData.dateReportStats}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="date"
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    fontSize={12}
-                  />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value: number) => formatCurrency(value)}
-                  />
-                  <Legend />
-                  <Line
-                    type="monotone"
-                    dataKey="totalValue"
-                    stroke="#10b981"
-                    strokeWidth={2}
-                    name="มูลค่า (บาท)"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="totalQty"
-                    stroke="#3b82f6"
-                    strokeWidth={2}
-                    name="จำนวน"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
-            ) : null}
-          </CardContent>
-        </Card>
+        {/* กราฟแสดงแนวโน้มตามวันที่รายงาน - แสดงเฉพาะเมื่อ login แล้ว */}
+        {isAuthenticated && (
+          <Card>
+            <CardHeader>
+              <CardTitle>แนวโน้มมูลค่าตามวันที่รายงาน</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <Skeleton className="h-64 w-full" />
+              ) : dashboardData?.dateReportStats ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <LineChart data={dashboardData.dateReportStats}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="date"
+                      angle={-45}
+                      textAnchor="end"
+                      height={100}
+                      fontSize={12}
+                    />
+                    <YAxis />
+                    <Tooltip
+                      formatter={(value: number) => formatCurrency(value)}
+                    />
+                    <Legend />
+                    <Line
+                      type="monotone"
+                      dataKey="totalValue"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      name="มูลค่า (บาท)"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="totalQty"
+                      stroke="#3b82f6"
+                      strokeWidth={2}
+                      name="จำนวน"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : null}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* กราฟแสดงมูลค่าตามสถานที่เก็บ */}
-        <Card>
-          <CardHeader>
-            <CardTitle>มูลค่าสินค้าตามสถานที่เก็บ</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <Skeleton className="h-64 w-full" />
-            ) : dashboardData?.storeStats ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={dashboardData.storeStats}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis
-                    dataKey="name"
-                    angle={-45}
-                    textAnchor="end"
-                    height={100}
-                    fontSize={12}
-                    tickFormatter={(value) => formatStoreLocation(value)}
-                  />
-                  <YAxis />
-                  <Tooltip
-                    formatter={(value: number) => formatCurrency(value)}
-                  />
-                  <Legend />
-                  <Bar dataKey="totalValue" fill="#10b981" name="มูลค่า (บาท)" />
-                </BarChart>
-              </ResponsiveContainer>
-            ) : null}
-          </CardContent>
-        </Card>
+        {/* กราฟแสดงมูลค่าตามสถานที่เก็บ - แสดงเฉพาะเมื่อ login แล้ว */}
+        {isAuthenticated && (
+          <Card>
+            <CardHeader>
+              <CardTitle>มูลค่าสินค้าตามสถานที่เก็บ</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <Skeleton className="h-64 w-full" />
+              ) : dashboardData?.storeStats ? (
+                <ResponsiveContainer width="100%" height={300}>
+                  <BarChart data={dashboardData.storeStats}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis
+                      dataKey="name"
+                      angle={-45}
+                      textAnchor="end"
+                      height={100}
+                      fontSize={12}
+                      tickFormatter={(value) => formatStoreLocation(value)}
+                    />
+                    <YAxis />
+                    <Tooltip
+                      formatter={(value: number) => formatCurrency(value)}
+                    />
+                    <Legend />
+                    <Bar dataKey="totalValue" fill="#10b981" name="มูลค่า (บาท)" />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : null}
+            </CardContent>
+          </Card>
+        )}
       </div>
 
-      {/* Top Products and Expired Products */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* สินค้าที่มีมูลค่าสูงสุด */}
+      {/* Top Products and Expired Products - แสดงเฉพาะเมื่อ login แล้ว */}
+      {isAuthenticated && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          {/* สินค้าที่มีมูลค่าสูงสุด */}
+          <Card>
+            <CardHeader>
+              <CardTitle>สินค้าที่มีมูลค่าสูงสุด (Top 10)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : dashboardData?.highValueProducts ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>รหัสสินค้า</TableHead>
+                      <TableHead>รายละเอียด</TableHead>
+                      <TableHead className="text-right">มูลค่า</TableHead>
+                      <TableHead className="text-right">จำนวน</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dashboardData.highValueProducts.map((product, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {product.product_code}
+                          </code>
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {product.description}
+                        </TableCell>
+                        <TableCell className="text-right font-semibold text-green-600">
+                          {formatCurrency(product.totalValue)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {product.totalQty.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : null}
+            </CardContent>
+          </Card>
+
+          {/* สินค้าหมดอายุ */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-red-600">สินค้าหมดอายุ (Top 10)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loading ? (
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <Skeleton key={i} className="h-12 w-full" />
+                  ))}
+                </div>
+              ) : dashboardData?.expiredProducts ? (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>รหัสสินค้า</TableHead>
+                      <TableHead>รายละเอียด</TableHead>
+                      <TableHead>วันหมดอายุ</TableHead>
+                      <TableHead className="text-right">จำนวน</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {dashboardData.expiredProducts.map((product, index) => (
+                      <TableRow key={index}>
+                        <TableCell className="font-medium">
+                          <code className="text-xs bg-gray-100 px-2 py-1 rounded">
+                            {product.product_code}
+                          </code>
+                        </TableCell>
+                        <TableCell className="max-w-xs truncate">
+                          {product.description}
+                        </TableCell>
+                        <TableCell className="text-red-600">
+                          {new Date(product.exp).toLocaleDateString("th-TH")}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {product.qty.toLocaleString()}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              ) : null}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
+      {/* Summary Table - แสดงเฉพาะเมื่อ login แล้ว */}
+      {isAuthenticated && (
         <Card>
           <CardHeader>
-            <CardTitle>สินค้าที่มีมูลค่าสูงสุด (Top 10)</CardTitle>
+            <CardTitle>สรุปข้อมูลตามหมวดหมู่</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -380,32 +484,29 @@ export default function InventoryDashboardPage() {
                   <Skeleton key={i} className="h-12 w-full" />
                 ))}
               </div>
-            ) : dashboardData?.highValueProducts ? (
+            ) : dashboardData?.categoryStats ? (
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>รหัสสินค้า</TableHead>
-                    <TableHead>รายละเอียด</TableHead>
-                    <TableHead className="text-right">มูลค่า</TableHead>
-                    <TableHead className="text-right">จำนวน</TableHead>
+                    <TableHead>หมวดหมู่</TableHead>
+                    <TableHead className="text-right">จำนวนสินค้า</TableHead>
+                    <TableHead className="text-right">จำนวนรวม</TableHead>
+                    <TableHead className="text-right">มูลค่ารวม</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {dashboardData.highValueProducts.map((product, index) => (
+                  {dashboardData.categoryStats.map((category, index) => (
                     <TableRow key={index}>
-                      <TableCell className="font-medium">
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                          {product.product_code}
-                        </code>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {product.description}
+                      <TableCell className="font-medium">{category.name}</TableCell>
+                      <TableCell className="text-right">{category.count}</TableCell>
+                      <TableCell className="text-right">
+                        {category.totalQty.toLocaleString(undefined, {
+                          minimumFractionDigits: 3,
+                          maximumFractionDigits: 3,
+                        })}
                       </TableCell>
                       <TableCell className="text-right font-semibold text-green-600">
-                        {formatCurrency(product.totalValue)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {product.totalQty.toLocaleString()}
+                        {formatCurrency(category.totalValue)}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -414,98 +515,7 @@ export default function InventoryDashboardPage() {
             ) : null}
           </CardContent>
         </Card>
-
-        {/* สินค้าหมดอายุ */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-red-600">สินค้าหมดอายุ (Top 10)</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loading ? (
-              <div className="space-y-3">
-                {[...Array(5)].map((_, i) => (
-                  <Skeleton key={i} className="h-12 w-full" />
-                ))}
-              </div>
-            ) : dashboardData?.expiredProducts ? (
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>รหัสสินค้า</TableHead>
-                    <TableHead>รายละเอียด</TableHead>
-                    <TableHead>วันหมดอายุ</TableHead>
-                    <TableHead className="text-right">จำนวน</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {dashboardData.expiredProducts.map((product, index) => (
-                    <TableRow key={index}>
-                      <TableCell className="font-medium">
-                        <code className="text-xs bg-gray-100 px-2 py-1 rounded">
-                          {product.product_code}
-                        </code>
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {product.description}
-                      </TableCell>
-                      <TableCell className="text-red-600">
-                        {new Date(product.exp).toLocaleDateString("th-TH")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {product.qty.toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            ) : null}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Summary Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>สรุปข้อมูลตามหมวดหมู่</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="space-y-3">
-              {[...Array(5)].map((_, i) => (
-                <Skeleton key={i} className="h-12 w-full" />
-              ))}
-            </div>
-          ) : dashboardData?.categoryStats ? (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>หมวดหมู่</TableHead>
-                  <TableHead className="text-right">จำนวนสินค้า</TableHead>
-                  <TableHead className="text-right">จำนวนรวม</TableHead>
-                  <TableHead className="text-right">มูลค่ารวม</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {dashboardData.categoryStats.map((category, index) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">{category.name}</TableCell>
-                    <TableCell className="text-right">{category.count}</TableCell>
-                    <TableCell className="text-right">
-                      {category.totalQty.toLocaleString(undefined, {
-                        minimumFractionDigits: 3,
-                        maximumFractionDigits: 3,
-                      })}
-                    </TableCell>
-                    <TableCell className="text-right font-semibold text-green-600">
-                      {formatCurrency(category.totalValue)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          ) : null}
-        </CardContent>
-      </Card>
+      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -28,11 +29,11 @@ const menuItems: MenuItem[] = [
     href: "/",
     label: "Dashboard",
     icon: <BarChart3 className="h-5 w-5" />,
-    requireAuth: true,
+    requireAuth: false, // Dashboard แสดงได้โดยไม่ต้อง login
   },
-  // Daily Sales Section
+  // Drug Data Section
   {
-    href: "/data",
+    href: "/maxmin",
     label: "รายการข้อมูล Max Min",
     icon: <Database className="h-5 w-5" />,
     requireAuth: true,
@@ -110,10 +111,17 @@ export function Sidebar() {
         {/* Logo/Brand */}
         <div className="flex h-16 items-center px-6 bg-gradient-to-r from-blue-600 to-blue-700 backdrop-blur-sm shadow-md">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white text-blue-600 shadow-lg">
-              <span className="text-sm font-bold">VS</span>
+            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white shadow-lg overflow-hidden">
+              <Image
+                src="/img/vin.png"
+                alt="Vin Logo"
+                width={32}
+                height={32}
+                className="object-contain"
+                priority
+              />
             </div>
-            <span className="text-lg font-semibold text-white">Daily Sales</span>
+            <span className="text-lg font-semibold text-white">Drug Management</span>
           </Link>
         </div>
 
@@ -199,7 +207,7 @@ export function Sidebar() {
         {/* Footer */}
         <div className="p-4 bg-blue-50/80 backdrop-blur-sm">
           <p className="text-xs text-blue-700/70">
-            © 2024 Daily Sales Management
+            © 2024 Drug Management
           </p>
         </div>
       </div>

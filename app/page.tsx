@@ -145,7 +145,7 @@ export default function InventoryDashboardPage() {
       "D2": "ห้องยาอาคาร 2",
       "D5": "ห้องยาอาคาร 5",
       "D5A": "ห้องยาอาคาร 5A",
-      "P": "คลังสินค้า",
+      "P": "คลังยา",
       "S": "พัสดุ",
     };
     return storeMapping[storeCode] || storeCode;
@@ -159,7 +159,7 @@ export default function InventoryDashboardPage() {
           Dashboard
         </h1>
         <p className="mt-2 text-sm text-gray-600">
-          ภาพรวมข้อมูลสินค้าและสถิติในทุกมิติเพื่อการตัดสินใจ
+          ภาพรวมข้อมูลยาและสถิติ
         </p>
       </div>
 
@@ -169,7 +169,7 @@ export default function InventoryDashboardPage() {
           <CardContent className="p-6">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm text-gray-600">สินค้าทั้งหมด</p>
+                <p className="text-sm text-gray-600">รายการยาทั้งหมด</p>
                 <p className="text-2xl font-bold text-blue-600">
                   {loading ? "..." : stats?.totalProducts || 0}
                 </p>
@@ -227,7 +227,7 @@ export default function InventoryDashboardPage() {
         {/* กราฟแสดงมูลค่าตามหมวดหมู่ */}
         <Card>
           <CardHeader>
-            <CardTitle>มูลค่าสินค้าตามหมวดหมู่</CardTitle>
+            <CardTitle>มูลค่ายาตามหมวดหมู่</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -255,10 +255,10 @@ export default function InventoryDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* กราฟแสดงจำนวนสินค้าตามสถานที่เก็บ */}
+        {/* กราฟแสดงจำนวนยาตามสถานที่เก็บ */}
         <Card>
           <CardHeader>
-            <CardTitle>จำนวนสินค้าตามสถานที่เก็บ</CardTitle>
+            <CardTitle>จำนวนยาตามสถานที่เก็บ</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -336,7 +336,7 @@ export default function InventoryDashboardPage() {
         {/* กราฟแสดงมูลค่าตามสถานที่เก็บ */}
         <Card>
           <CardHeader>
-            <CardTitle>มูลค่าสินค้าตามสถานที่เก็บ</CardTitle>
+            <CardTitle>มูลค่ายาตามสถานที่เก็บ</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -368,10 +368,10 @@ export default function InventoryDashboardPage() {
 
       {/* Top Products and Expired Products */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-        {/* สินค้าที่มีมูลค่าสูงสุด */}
+        {/* ยาที่มีมูลค่าสูงสุด */}
         <Card>
           <CardHeader>
-            <CardTitle>สินค้าที่มีมูลค่าสูงสุด (Top 10)</CardTitle>
+            <CardTitle>ยาที่มีมูลค่าสูงสุด (Top 10)</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -384,7 +384,7 @@ export default function InventoryDashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>รหัสสินค้า</TableHead>
+                    <TableHead>รหัสยา</TableHead>
                     <TableHead>รายละเอียด</TableHead>
                     <TableHead className="text-right">มูลค่า</TableHead>
                     <TableHead className="text-right">จำนวน</TableHead>
@@ -415,10 +415,10 @@ export default function InventoryDashboardPage() {
           </CardContent>
         </Card>
 
-        {/* สินค้าหมดอายุ */}
+        {/* ยาหมดอายุ */}
         <Card>
           <CardHeader>
-            <CardTitle className="text-red-600">สินค้าหมดอายุ (Top 10)</CardTitle>
+            <CardTitle className="text-red-600">ยาหมดอายุ (Top 10)</CardTitle>
           </CardHeader>
           <CardContent>
             {loading ? (
@@ -431,7 +431,7 @@ export default function InventoryDashboardPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>รหัสสินค้า</TableHead>
+                    <TableHead>รหัสยา</TableHead>
                     <TableHead>รายละเอียด</TableHead>
                     <TableHead>วันหมดอายุ</TableHead>
                     <TableHead className="text-right">จำนวน</TableHead>
@@ -480,7 +480,7 @@ export default function InventoryDashboardPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>หมวดหมู่</TableHead>
-                  <TableHead className="text-right">จำนวนสินค้า</TableHead>
+                  <TableHead className="text-right">จำนวนยา</TableHead>
                   <TableHead className="text-right">จำนวนรวม</TableHead>
                   <TableHead className="text-right">มูลค่ารวม</TableHead>
                 </TableRow>
