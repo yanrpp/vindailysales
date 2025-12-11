@@ -37,7 +37,7 @@ interface TableRowData {
   issue_unit: string;
 }
 
-interface DataResponse {
+interface MaxMinResponse {
   data?: TableRowData[];
   total?: number;
   page?: number;
@@ -52,7 +52,7 @@ interface DataResponse {
   error?: string;
 }
 
-export default function DataPage() {
+export default function MaxMinPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TableRowData[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -122,8 +122,8 @@ export default function DataPage() {
         minQuotaMultiplier: minQuotaMultiplier.toString(),
       });
 
-      const response = await fetch(`/api/data?${params}`);
-      const json: DataResponse = await response.json();
+      const response = await fetch(`/api/maxmin?${params}`);
+      const json: MaxMinResponse = await response.json();
 
       if (!response.ok) {
         setError(json.error || "เกิดข้อผิดพลาดในการโหลดข้อมูล");

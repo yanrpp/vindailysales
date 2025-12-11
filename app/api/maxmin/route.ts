@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { getConfig } from "@/lib/config";
 
-interface DataQueryParams {
+interface MaxMinQueryParams {
   report_dates?: string[]; // Array of 3 report dates
   search?: string; // Search keyword
   page?: number;
@@ -70,41 +70,134 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ดึงข้อมูล unique items (item_code, item_name, unit) โดยใช้ distinct
-    let itemsQuery = supabase
-      .from("daily_sale_items")
-      .select("item_code, item_name, unit", { count: "exact" });
+    // ดึงข้อมูล quantity สำหรับแต่ละ report_date ก่อน
+    const reportDatesArray = reportDates.slice(0, 3); // ใช้แค่ 3 ตัวแรก
+    
+    // ดึงข้อมูล items และ quantity สำหรับทุก report_date ในครั้งเดียว
+    // โดย filter ตาม report_date ที่เลือก
+    // Supabase มี default limit ที่ 1000 rows ดังนั้นต้องดึงข้อมูลทั้งหมดโดยใช้ pagination
+    let allItems: any[] = [];
+    let hasMore = true;
+    let pageIndex = 0;
+    const pageSizeLimit = 1000; // Supabase default limit
 
-    // ถ้ามี search keyword
-    if (search) {
-      itemsQuery = itemsQuery.or(
-        `item_code.ilike.%${search}%,item_name.ilike.%${search}%`,
-      );
+    while (hasMore) {
+      let itemsQuery = supabase
+        .from("daily_sale_items")
+        .select(
+          "item_code, item_name, unit, quantity, daily_sale_reports!inner(report_date)",
+          { count: "exact" }
+        )
+        .in("daily_sale_reports.report_date", reportDatesArray)
+        .range(pageIndex * pageSizeLimit, (pageIndex + 1) * pageSizeLimit - 1);
+
+      // ถ้ามี search keyword
+      if (search) {
+        itemsQuery = itemsQuery.or(
+          `item_code.ilike.%${search}%,item_name.ilike.%${search}%`,
+        );
+      }
+
+      const { data: itemsData, error: itemsError, count } = await itemsQuery;
+
+      if (itemsError) {
+        console.error("Error fetching items:", itemsError);
+        return NextResponse.json(
+          { error: itemsError.message },
+          { status: 500 },
+        );
+      }
+
+      if (itemsData && itemsData.length > 0) {
+        allItems = allItems.concat(itemsData);
+      }
+
+      // ตรวจสอบว่ายังมีข้อมูลอีกหรือไม่
+      const totalFetched = (pageIndex + 1) * pageSizeLimit;
+      hasMore = itemsData && itemsData.length === pageSizeLimit && (count === null || totalFetched < count);
+      pageIndex++;
+      
+      // Log สำหรับ debug
+      if (process.env.NODE_ENV === "development") {
+        console.log(`Fetched page ${pageIndex}: ${itemsData?.length || 0} items, total so far: ${allItems.length}, count: ${count}`);
+      }
     }
-
-    const { data: allItems, error: itemsError } = await itemsQuery;
-
-    if (itemsError) {
-      console.error("Error fetching items:", itemsError);
-      return NextResponse.json(
-        { error: itemsError.message },
-        { status: 500 },
-      );
-    }
-
-    // กรอง unique items โดยใช้ item_code เป็น key
+    
+    // สร้าง map สำหรับเก็บ unique items และ quantity
     const uniqueItemsMap = new Map<string, { item_code: string; item_name: string; unit: string }>();
-    allItems?.forEach((item) => {
-      if (item.item_code && !uniqueItemsMap.has(item.item_code)) {
-        uniqueItemsMap.set(item.item_code, {
-          item_code: item.item_code,
+    const quantitiesMap: Record<string, Record<string, number>> = {}; // item_code -> { report_date: quantity }
+
+    // ประมวลผลข้อมูลทั้งหมด
+    allItems.forEach((item: any) => {
+      const code = item.item_code;
+      if (!code) return; // ข้ามถ้าไม่มี item_code
+
+      // เก็บ unique items
+      if (!uniqueItemsMap.has(code)) {
+        uniqueItemsMap.set(code, {
+          item_code: code,
           item_name: item.item_name || "",
           unit: item.unit || "",
         });
       }
+
+      // รวม quantity ตาม item_code และ report_date
+      const reportDate = item.daily_sale_reports?.report_date;
+      if (reportDate) {
+        if (!quantitiesMap[code]) {
+          quantitiesMap[code] = {};
+        }
+        // ตรวจสอบ quantity อย่างระมัดระวัง
+        // ถ้า quantity เป็น null, undefined, หรือ NaN ให้ถือว่าเป็น 0
+        // แต่ถ้าเป็น string ว่างหรือ "0" ให้ถือว่าเป็น 0
+        let newQty = 0;
+        if (item.quantity !== null && item.quantity !== undefined) {
+          const parsedQty = Number(item.quantity);
+          if (!isNaN(parsedQty)) {
+            newQty = parsedQty;
+          }
+        }
+        
+        const currentQty = quantitiesMap[code][reportDate] || 0;
+        quantitiesMap[code][reportDate] = currentQty + newQty;
+      }
     });
 
     const uniqueItems = Array.from(uniqueItemsMap.values());
+    
+    // Log สำหรับ debug
+    if (process.env.NODE_ENV === "development") {
+      console.log(`Total items fetched: ${allItems.length}, Unique items: ${uniqueItems.length}`);
+      
+      // ตรวจสอบ quantity ที่เป็น 0 หรือ null
+      let zeroQuantityCount = 0;
+      let nullQuantityCount = 0;
+      let validQuantityCount = 0;
+      allItems.forEach((item: any) => {
+        if (item.quantity === null || item.quantity === undefined) {
+          nullQuantityCount++;
+        } else if (Number(item.quantity) === 0) {
+          zeroQuantityCount++;
+        } else {
+          validQuantityCount++;
+        }
+      });
+      console.log(`Quantity stats: valid=${validQuantityCount}, zero=${zeroQuantityCount}, null=${nullQuantityCount}`);
+      
+      // ตรวจสอบ quantitiesMap
+      let itemsWithZeroQty = 0;
+      let itemsWithValidQty = 0;
+      Object.keys(quantitiesMap).forEach((code) => {
+        const qtyMap = quantitiesMap[code];
+        const totalQty = Object.values(qtyMap).reduce((sum, qty) => sum + qty, 0);
+        if (totalQty === 0) {
+          itemsWithZeroQty++;
+        } else {
+          itemsWithValidQty++;
+        }
+      });
+      console.log(`QuantitiesMap stats: items with valid qty=${itemsWithValidQty}, items with zero qty=${itemsWithZeroQty}`);
+    }
 
     if (!uniqueItems || uniqueItems.length === 0) {
       return NextResponse.json({
@@ -117,47 +210,7 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // ดึงข้อมูล quantity สำหรับแต่ละ report_date
-    const reportDatesArray = reportDates.slice(0, 3); // ใช้แค่ 3 ตัวแรก
-    const quantitiesMap: Record<
-      string,
-      Record<string, number>
-    > = {}; // item_code -> { report_date: quantity }
-
-    // ดึงข้อมูล quantity สำหรับทุก report_date ในครั้งเดียว (ใช้ in filter)
-    try {
-      const { data: itemsData, error: itemsDataError } = await supabase
-        .from("daily_sale_items")
-        .select(
-          "item_code, quantity, daily_sale_reports!inner(report_date)",
-        )
-        .in("daily_sale_reports.report_date", reportDatesArray);
-
-      if (itemsDataError) {
-        console.error("Error fetching quantities:", itemsDataError);
-        // ไม่ return error แต่ให้ continue เพื่อให้แสดงข้อมูลที่ดึงได้แล้ว
-      } else if (itemsData && itemsData.length > 0) {
-        // รวม quantity ตาม item_code และ report_date
-        itemsData.forEach((item: any) => {
-          const code = item.item_code;
-          if (!code) return; // ข้ามถ้าไม่มี item_code
-          
-          const reportDate = item.daily_sale_reports?.report_date;
-          if (!reportDate) return; // ข้ามถ้าไม่มี report_date
-          
-          if (!quantitiesMap[code]) {
-            quantitiesMap[code] = {};
-          }
-          // รวม quantity (ถ้ามีหลายแถวของ item_code เดียวกันใน report_date เดียวกัน)
-          const currentQty = quantitiesMap[code][reportDate] || 0;
-          const newQty = Number(item.quantity) || 0;
-          quantitiesMap[code][reportDate] = currentQty + newQty;
-        });
-      }
-    } catch (queryError) {
-      console.error("Error in quantity query:", queryError);
-      // Continue processing with empty quantitiesMap
-    }
+    // quantitiesMap ถูกสร้างไว้แล้วในส่วนบน
 
     // สร้างข้อมูลสำหรับ table
     const tableData = uniqueItems.map((item, index) => {
@@ -278,7 +331,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err: unknown) {
     const errorMessage = err instanceof Error ? err.message : "Unknown error";
-    console.error("Error in /api/data:", err);
+    console.error("Error in /api/maxmin:", err);
     return NextResponse.json(
       { 
         error: errorMessage,
