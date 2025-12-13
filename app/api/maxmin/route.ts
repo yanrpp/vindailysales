@@ -215,39 +215,53 @@ export async function GET(req: NextRequest) {
     // สร้างข้อมูลสำหรับ table
     const tableData = uniqueItems.map((item, index) => {
       const code = item.item_code;
-      const quantities: number[] = [];
-      const monthData: Record<string, { label: string; value: number }> = {};
+      const quantities: (number | null)[] = [];
+      const monthData: Record<string, { label: string; value: number | string }> = {};
 
       reportDatesArray.forEach((reportDate, idx) => {
-        // ดึง quantity จาก map ที่เราสร้างไว้
-        const qty = quantitiesMap[code]?.[reportDate] || 0;
-        quantities.push(qty);
-        monthData[`month_${idx + 1}`] = {
-          label: formatThaiDate(reportDate),
-          value: qty,
-        };
+        // ตรวจสอบว่ามีข้อมูลใน quantitiesMap หรือไม่
+        // ถ้ามีข้อมูลใน map แสดงว่ามี record ใน report_date นี้
+        // ถ้าไม่มีข้อมูลใน map แสดงว่าไม่มี record ใน report_date นี้ ให้แสดง "-"
+        const hasData = quantitiesMap[code] && quantitiesMap[code][reportDate] !== undefined;
+        
+        if (hasData) {
+          const qty = quantitiesMap[code][reportDate];
+          quantities.push(qty);
+          monthData[`month_${idx + 1}`] = {
+            label: formatThaiDate(reportDate),
+            value: qty,
+          };
+        } else {
+          // ไม่มีข้อมูลใน report_date นี้ ให้แสดง "-"
+          quantities.push(null);
+          monthData[`month_${idx + 1}`] = {
+            label: formatThaiDate(reportDate),
+            value: "-",
+          };
+        }
       });
 
-      // เติม 0 ถ้ามี report_date น้อยกว่า 3 ตัว
+      // เติม "-" ถ้ามี report_date น้อยกว่า 3 ตัว
       while (quantities.length < 3) {
-        quantities.push(0);
+        quantities.push(null);
         monthData[`month_${quantities.length}`] = {
           label: "-",
-          value: 0,
+          value: "-",
         };
       }
 
       // คำนวณ min: หาค่าที่น้อยที่สุดจาก 3 เดือนที่เลือก
-      // ใช้เฉพาะค่าที่ > 0 เท่านั้น (ไม่นับ 0)
-      // แต่ถ้าทุกค่าเป็น 0 ให้แสดง 0
-      const validQuantities = quantities.filter((q) => q > 0);
+      // ใช้เฉพาะค่าที่ > 0 และไม่ใช่ null เท่านั้น
+      // แต่ถ้าทุกค่าเป็น null หรือ 0 ให้แสดง 0
+      const validQuantities = quantities.filter((q) => q !== null && q > 0) as number[];
       const minQty = validQuantities.length > 0 
         ? Math.min(...validQuantities) 
         : 0;
       
-      // คำนวณ max: หาค่าที่มากที่สุดจาก 3 เดือนทั้งหมด (รวม 0 ด้วย)
-      const maxQty = quantities.length > 0 ? Math.max(...quantities) : 0;
-      const avgQty = calculateAverage(quantities);
+      // คำนวณ max: หาค่าที่มากที่สุดจาก 3 เดือนทั้งหมด (ไม่นับ null)
+      const numericQuantities = quantities.filter((q) => q !== null) as number[];
+      const maxQty = numericQuantities.length > 0 ? Math.max(...numericQuantities) : 0;
+      const avgQty = numericQuantities.length > 0 ? calculateAverage(numericQuantities) : 0;
       // Maximum Quota: ใช้ค่าจาก มากสุดใน 3 เดือนที่เลือก มา หาร 30 แล้ว คูณด้วย maxQuotaMultiplier
       const maxQuota = Math.round((maxQty / 30) * maxQuotaMultiplier);
       // Minimum Quota: ใช้ค่าจาก มากสุดใน 3 เดือนที่เลือก มา หาร 30 แล้ว คูณด้วย minQuotaMultiplier
