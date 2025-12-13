@@ -21,6 +21,7 @@ import { Upload } from "lucide-react";
 
 interface TableRowData {
   no: number;
+  item_type: string | null;
   item_code: string;
   item_name: string;
   unit: string;
@@ -49,6 +50,7 @@ interface MaxMinResponse {
     c_monthAvg: number;
   };
   report_dates?: string[];
+  item_types?: string[];
   error?: string;
 }
 
@@ -75,7 +77,25 @@ export default function MaxMinPage() {
     };
     loadDates();
   }, []);
+
+  // ดึงรายการ item_type ที่มีในระบบ
+  useEffect(() => {
+    const loadItemTypes = async () => {
+      try {
+        const response = await fetch("/api/item-types");
+        const json = await response.json();
+        if (response.ok && json.item_types) {
+          setAvailableItemTypes(json.item_types);
+        }
+      } catch (err) {
+        console.error("Error loading item types:", err);
+      }
+    };
+    loadItemTypes();
+  }, []);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [itemTypeFilter, setItemTypeFilter] = useState("");
+  const [availableItemTypes, setAvailableItemTypes] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sortBy, setSortBy] = useState<string>("item_name");
@@ -100,6 +120,19 @@ export default function MaxMinPage() {
     }
   }, []);
 
+  // Reload available item types after upload
+  const reloadItemTypes = useCallback(async () => {
+    try {
+      const response = await fetch("/api/item-types");
+      const json = await response.json();
+      if (response.ok && json.item_types) {
+        setAvailableItemTypes(json.item_types);
+      }
+    } catch (err) {
+      console.error("Error loading item types:", err);
+    }
+  }, []);
+
   // ดึงข้อมูล
   const loadData = useCallback(async () => {
     if (reportDates.length === 0) {
@@ -114,6 +147,7 @@ export default function MaxMinPage() {
       const params = new URLSearchParams({
         report_dates: reportDates.join(","),
         search: searchKeyword,
+        item_type: itemTypeFilter,
         page: page.toString(),
         pageSize: pageSize.toString(),
         sortBy: sortBy,
@@ -144,7 +178,7 @@ export default function MaxMinPage() {
     } finally {
       setLoading(false);
     }
-  }, [reportDates, searchKeyword, page, pageSize, sortBy, sortOrder, maxQuotaMultiplier, minQuotaMultiplier]);
+  }, [reportDates, searchKeyword, itemTypeFilter, page, pageSize, sortBy, sortOrder, maxQuotaMultiplier, minQuotaMultiplier]);
 
   useEffect(() => {
     loadData();
@@ -160,6 +194,7 @@ export default function MaxMinPage() {
     // Headers
     worksheet.addRow([
       "No.",
+      "Item Type",
       "Item Code",
       "Item Name",
       "Unit",
@@ -177,6 +212,7 @@ export default function MaxMinPage() {
     data.forEach((row) => {
       worksheet.addRow([
         row.no,
+        row.item_type || "",
         row.item_code,
         row.item_name,
         row.unit,
@@ -210,6 +246,7 @@ export default function MaxMinPage() {
 
     const headers = [
       "No.",
+      "Item Type",
       "Item Code",
       "Item Name",
       "Unit",
@@ -228,6 +265,7 @@ export default function MaxMinPage() {
       ...data.map((row) =>
         [
           row.no,
+          `"${row.item_type || ""}"`,
           `"${row.item_code}"`,
           `"${row.item_name}"`,
           `"${row.unit}"`,
@@ -273,6 +311,7 @@ export default function MaxMinPage() {
     // Headers (Thai labels)
     worksheet.addRow([
       "ลำดับ",        // No.
+      "ประเภทสินค้า",  // Item Type
       "รหัสสินค้า",    // Item Code
       "รายการสินค้า",  // Item Name
       "หน่วย",        // Unit
@@ -295,6 +334,7 @@ export default function MaxMinPage() {
     data.forEach((row) => {
       worksheet.addRow([
         row.no,              // ลำดับ
+        row.item_type || "", // ประเภทสินค้า
         row.item_code,      // รหัสสินค้า
         row.item_name,      // รายการสินค้า
         row.unit,           // หน่วย
@@ -398,8 +438,9 @@ export default function MaxMinPage() {
         open={uploadModalOpen}
         onOpenChange={setUploadModalOpen}
         onUploadSuccess={() => {
-          // Reload available dates after successful upload
+          // Reload available dates and item types after successful upload
           reloadDates();
+          reloadItemTypes();
         }}
       />
 
@@ -465,7 +506,7 @@ export default function MaxMinPage() {
                 const isOpen = dateDropdownOpen[index];
 
                 return (
-                  <div key={index} className="space-y-2 relative flex-1 min-w-[200px]">
+                  <div key={index} className="space-y-2 relative w-[180px]">
                     <Label htmlFor={`date-${index}`} className="text-sm font-medium">
                       ข้อมูลชุดที่ {index + 1}
                     </Label>
@@ -593,7 +634,7 @@ export default function MaxMinPage() {
               })}
 
               {/* Search Items */}
-              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+              <div className="flex items-center gap-2 flex-1 min-w-[300px]">
                 <Label htmlFor="search" className="text-sm font-medium whitespace-nowrap">
                   Search Items:
                 </Label>
@@ -609,34 +650,36 @@ export default function MaxMinPage() {
                   className="w-full"
                 />
               </div>
+
+              {/* Item Type Filter */}
+              <div className="flex items-center gap-2 min-w-[200px]">
+                <Label htmlFor="itemType" className="text-sm font-medium whitespace-nowrap">
+                  Item Type:
+                </Label>
+                <select
+                  id="itemType"
+                  value={itemTypeFilter}
+                  onChange={(e) => {
+                    setItemTypeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">ทั้งหมด</option>
+                  {availableItemTypes.map((itemType) => (
+                    <option key={itemType} value={itemType}>
+                      {itemType}
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
 
             {/* Quota Multipliers */}
             <div className="flex flex-wrap items-end gap-4 pt-2">
               <div className="flex items-center gap-2">
-                <Label htmlFor="maxQuotaMultiplier" className="text-sm font-medium whitespace-nowrap">
-                  Maximum Quota Multiplier:
-                </Label>
-                <Input
-                  id="maxQuotaMultiplier"
-                  type="number"
-                  min="1"
-                  step="0.1"
-                  value={maxQuotaMultiplier}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 10;
-                    setMaxQuotaMultiplier(value);
-                    setPage(1);
-                  }}
-                  className="w-24"
-                />
-                <span className="text-xs text-gray-500 whitespace-nowrap">
-                  (สูตร: max / 30 × {maxQuotaMultiplier})
-                </span>
-              </div>
-              <div className="flex items-center gap-2">
                 <Label htmlFor="minQuotaMultiplier" className="text-sm font-medium whitespace-nowrap">
-                  Minimum Quota Multiplier:
+                  Min:
                 </Label>
                 <Input
                   id="minQuotaMultiplier"
@@ -653,6 +696,27 @@ export default function MaxMinPage() {
                 />
                 <span className="text-xs text-gray-500 whitespace-nowrap">
                   (สูตร: max / 30 × {minQuotaMultiplier})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="maxQuotaMultiplier" className="text-sm font-medium whitespace-nowrap">
+                  Max:
+                </Label>
+                <Input
+                  id="maxQuotaMultiplier"
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  value={maxQuotaMultiplier}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 10;
+                    setMaxQuotaMultiplier(value);
+                    setPage(1);
+                  }}
+                  className="w-24"
+                />
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  (สูตร: max / 30 × {maxQuotaMultiplier})
                 </span>
               </div>
             </div>
@@ -727,6 +791,13 @@ export default function MaxMinPage() {
                         </TableHead>
                         <TableHead
                           className="cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort("item_type")}
+                        >
+                          Item Type{" "}
+                          {sortBy === "item_type" && (sortOrder === "asc" ? "↑" : "↓")}
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort("item_code")}
                         >
                           Item Code{" "}
@@ -797,6 +868,9 @@ export default function MaxMinPage() {
                       {data.map((row) => (
                         <TableRow key={row.item_code}>
                           <TableCell className="font-medium">{row.no}</TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {row.item_type || "-"}
+                          </TableCell>
                           <TableCell>
                             <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                               {row.item_code}

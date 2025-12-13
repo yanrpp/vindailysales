@@ -5,6 +5,7 @@ import { getConfig } from "@/lib/config";
 interface MaxMinQueryParams {
   report_dates?: string[]; // Array of 3 report dates
   search?: string; // Search keyword
+  item_type?: string; // Filter by item_type
   page?: number;
   pageSize?: number;
   sortBy?: string;
@@ -49,6 +50,7 @@ export async function GET(req: NextRequest) {
       ? params.get("report_dates")!.split(",")
       : [];
     const search = params.get("search") || "";
+    const itemType = params.get("item_type") || "";
     const page = parseInt(params.get("page") || "1", 10);
     const pageSize = parseInt(params.get("pageSize") || "20", 10);
     const sortBy = params.get("sortBy") || "item_name";
@@ -85,7 +87,7 @@ export async function GET(req: NextRequest) {
       let itemsQuery = supabase
         .from("daily_sale_items")
         .select(
-          "item_code, item_name, unit, quantity, daily_sale_reports!inner(report_date)",
+          "item_code, item_name, item_type, unit, quantity, daily_sale_reports!inner(report_date)",
           { count: "exact" }
         )
         .in("daily_sale_reports.report_date", reportDatesArray)
@@ -96,6 +98,11 @@ export async function GET(req: NextRequest) {
         itemsQuery = itemsQuery.or(
           `item_code.ilike.%${search}%,item_name.ilike.%${search}%`,
         );
+      }
+
+      // ถ้ามี item_type filter
+      if (itemType) {
+        itemsQuery = itemsQuery.eq("item_type", itemType);
       }
 
       const { data: itemsData, error: itemsError, count } = await itemsQuery;
@@ -124,7 +131,7 @@ export async function GET(req: NextRequest) {
     }
     
     // สร้าง map สำหรับเก็บ unique items และ quantity
-    const uniqueItemsMap = new Map<string, { item_code: string; item_name: string; unit: string }>();
+    const uniqueItemsMap = new Map<string, { item_code: string; item_name: string; item_type: string | null; unit: string }>();
     const quantitiesMap: Record<string, Record<string, number>> = {}; // item_code -> { report_date: quantity }
 
     // ประมวลผลข้อมูลทั้งหมด
@@ -137,6 +144,7 @@ export async function GET(req: NextRequest) {
         uniqueItemsMap.set(code, {
           item_code: code,
           item_name: item.item_name || "",
+          item_type: item.item_type || null,
           unit: item.unit || "",
         });
       }
@@ -269,6 +277,7 @@ export async function GET(req: NextRequest) {
 
       return {
         no: index + 1,
+        item_type: item.item_type || null,
         item_code: item.item_code || "",
         item_name: item.item_name || "",
         unit: item.unit || "",
