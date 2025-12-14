@@ -753,6 +753,7 @@ export default function MaxMinPage() {
                     <option value={50}>50</option>
                     <option value={100}>100</option>
                     <option value={1000}>1000</option>
+                    <option value={2000}>2000</option>
                   </select>
                 </div>
                 <span className="text-sm text-gray-500">
