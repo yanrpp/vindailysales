@@ -174,7 +174,7 @@ export default function NonMovingPage() {
     }).format(amount);
   };
 
-  // Export to Excel
+  // Export to Excel (รูปแบบตามไฟล์ตัวอย่างสินค้าที่ไม่เคลื่อนไหว)
   const exportToExcel = async () => {
     if (data.length === 0) {
       alert("ไม่มีข้อมูลให้ export");
@@ -215,10 +215,10 @@ export default function NonMovingPage() {
       const worksheet = workbook.addWorksheet("รายงานสินค้าไม่เคลื่อนไหว");
 
       // หาช่วงวันที่จาก date_reports
-      const dateReports = json.filters?.date_reports || [];
+      const dateReports: DateReport[] = json.filters?.date_reports || [];
       let dateRange = "";
       if (dateReports.length > 0) {
-        const dates = dateReports.map((dr: DateReport) => dr.detail_date).sort();
+        const dates = dateReports.map((dr) => dr.detail_date).sort();
         if (dates.length === 1) {
           dateRange = dates[0];
         } else {
@@ -227,7 +227,7 @@ export default function NonMovingPage() {
       }
 
       // Header: ชื่อโรงพยาบาล
-      const hospitalName = "โรงพยาบาลราชวิถีอินเตอร์เนชั่นแนล หนองแขม";
+      const hospitalName = "โรงพยาบาลราชวิชัยเวชอินเตอร์เนชั่นแนล หนองแขม";
       worksheet.mergeCells("A1:L1");
       const titleCell = worksheet.getCell("A1");
       titleCell.value = hospitalName;
@@ -253,17 +253,37 @@ export default function NonMovingPage() {
       // Empty row
       worksheet.addRow([]);
 
-      // Table Headers
+      // ---- กำหนดโครงสร้างคอลัมน์ให้ตรงกับไฟล์ตัวอย่าง ----
+      // โครงสร้าง:
+      // 1: no
+      // 2: หมวดหมู่
+      // 3: รหัสสินค้า
+      // 4: รายการสินค้า
+      // 5: หน่วย
+      // 6..(5 + actualStores.length): จำนวนแต่ละ store
+      // next: รวมจำนวน
+      // next: ราคา/หน่วย
+      // next: รวมราคา
+      // next: LOT No.
+      // next: วันหมดอายุ
+      // next: จำนวน (ต่อ LOT)
+      // next: สถานที่เก็บ
+
       const headerRowIndex = dateRange ? 5 : 4;
       const headers = [
         "no",
+        "หมวดหมู่",
+        "รหัสสินค้า",
         "รายการสินค้า",
         "หน่วย",
-        "ราคา/หน่วย",
         ...actualStores.map((store) => formatStoreLocation(store, true)),
-        "หมวดหมู่",
         "รวมจำนวน",
+        "ราคา/หน่วย",
         "รวมราคา",
+        "LOT No.",
+        "วันหมดอายุ",
+        "จำนวน",
+        "สถานที่เก็บ",
       ];
 
       const headerRow = worksheet.getRow(headerRowIndex);
@@ -285,125 +305,169 @@ export default function NonMovingPage() {
         };
       });
 
-      // Data rows
+      // เตรียมตัวแปรรวมยอด
       let totalQty = 0;
       let totalPrice = 0;
+      // รวมตาม store (ตามลำดับ actualStores)
+      const storeTotals = new Array(actualStores.length).fill(0);
+
+      // index แถวปัจจุบัน (เริ่มถัดจาก header)
+      let currentRowIndex = headerRowIndex + 1;
 
       allData.forEach((product, index) => {
-        const rowIndex = headerRowIndex + 1 + index;
-        const row = worksheet.getRow(rowIndex);
+        const row = worksheet.getRow(currentRowIndex);
+
+        // helper: set border ทุกคอลัมน์ที่ใช้ในแถว
+        const maxCol =
+          5 + // คอลัมน์ก่อน store
+          actualStores.length + // store
+          1 + // รวมจำนวน
+          1 + // ราคา/หน่วย
+          1 + // รวมราคา
+          4; // คอลัมน์ LOT
+
+        const setRowBorder = () => {
+          for (let c = 1; c <= maxCol; c++) {
+            const cell = row.getCell(c);
+            cell.border = {
+              top: { style: "thin" },
+              left: { style: "thin" },
+              bottom: { style: "thin" },
+              right: { style: "thin" },
+            };
+          }
+        };
 
         // no
         row.getCell(1).value = index + 1;
         row.getCell(1).alignment = { horizontal: "center" };
-        row.getCell(1).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-
-        // รายการสินค้า (product_code + description)
-        const productName = product.product_code 
-          ? `${product.product_code} ${product.description || ""}`.trim()
-          : product.description || "";
-        row.getCell(2).value = productName;
-        row.getCell(2).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-
-        // หน่วย
-        row.getCell(3).value = product.um || "";
-        row.getCell(3).alignment = { horizontal: "center" };
-        row.getCell(3).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-
-        // ราคา/หน่วย
-        row.getCell(4).value = product.cost || 0;
-        row.getCell(4).numFmt = "#,##0.00";
-        row.getCell(4).alignment = { horizontal: "right" };
-        row.getCell(4).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
-
-        // จำนวนแต่ละ store
-        let storeColIndex = 5;
-        actualStores.forEach((store) => {
-          const storeIndexInTopStores = topStores.indexOf(store);
-          const qty = product.store_qty && storeIndexInTopStores >= 0 && product.store_qty[storeIndexInTopStores] !== undefined
-            ? product.store_qty[storeIndexInTopStores]
-            : 0;
-          row.getCell(storeColIndex).value = qty;
-          row.getCell(storeColIndex).numFmt = "#,##0.000";
-          row.getCell(storeColIndex).alignment = { horizontal: "right" };
-          row.getCell(storeColIndex).border = {
-            top: { style: "thin" },
-            left: { style: "thin" },
-            bottom: { style: "thin" },
-            right: { style: "thin" },
-          };
-          storeColIndex++;
-        });
 
         // หมวดหมู่
-        const categoryColIndex = 5 + actualStores.length;
-        row.getCell(categoryColIndex).value = product.item_type || "";
-        row.getCell(categoryColIndex).alignment = { horizontal: "center" };
-        row.getCell(categoryColIndex).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
+        row.getCell(2).value = product.item_type || "";
+        row.getCell(2).alignment = { horizontal: "center" };
+
+        // รหัสสินค้า
+        row.getCell(3).value = product.product_code || "";
+
+        // รายการสินค้า (description)
+        row.getCell(4).value = product.description || "";
+
+        // หน่วย
+        row.getCell(5).value = product.um || "";
+        row.getCell(5).alignment = { horizontal: "center" };
+
+        // จำนวนแต่ละ store
+        const storeStartCol = 6;
+        actualStores.forEach((store, storeIdx) => {
+          const storeIndexInTopStores = topStores.indexOf(store);
+          const qty =
+            product.store_qty &&
+            storeIndexInTopStores >= 0 &&
+            product.store_qty[storeIndexInTopStores] !== undefined
+              ? product.store_qty[storeIndexInTopStores]
+              : 0;
+
+          const colIndex = storeStartCol + storeIdx;
+          row.getCell(colIndex).value = qty;
+          row.getCell(colIndex).numFmt = "#,##0.00";
+          row.getCell(colIndex).alignment = { horizontal: "right" };
+
+          storeTotals[storeIdx] += qty || 0;
+        });
+
+        // index คอลัมน์หลัง store
+        const storeEndCol = storeStartCol + actualStores.length - 1;
 
         // รวมจำนวน
-        const totalQtyColIndex = categoryColIndex + 1;
+        const totalQtyColIndex = storeEndCol + 1;
         row.getCell(totalQtyColIndex).value = product.total_qty || 0;
-        row.getCell(totalQtyColIndex).numFmt = "#,##0.000";
+        row.getCell(totalQtyColIndex).numFmt = "#,##0.00";
         row.getCell(totalQtyColIndex).alignment = { horizontal: "right" };
         row.getCell(totalQtyColIndex).font = { bold: true };
-        row.getCell(totalQtyColIndex).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
+
+        // ราคา/หน่วย
+        const unitPriceColIndex = totalQtyColIndex + 1;
+        row.getCell(unitPriceColIndex).value = product.cost || 0;
+        row.getCell(unitPriceColIndex).numFmt = "#,##0.00";
+        row.getCell(unitPriceColIndex).alignment = { horizontal: "right" };
 
         // รวมราคา
-        const totalPriceColIndex = totalQtyColIndex + 1;
-        const productTotalPrice = product.cost && product.total_qty ? product.cost * product.total_qty : 0;
+        const totalPriceColIndex = unitPriceColIndex + 1;
+        const productTotalPrice =
+          product.cost && product.total_qty ? product.cost * product.total_qty : 0;
         row.getCell(totalPriceColIndex).value = productTotalPrice;
         row.getCell(totalPriceColIndex).numFmt = "#,##0.0000";
         row.getCell(totalPriceColIndex).alignment = { horizontal: "right" };
         row.getCell(totalPriceColIndex).font = { bold: true };
-        row.getCell(totalPriceColIndex).border = {
-          top: { style: "thin" },
-          left: { style: "thin" },
-          bottom: { style: "thin" },
-          right: { style: "thin" },
-        };
+
+        // คอลัมน์ LOT (แถวแรกของ product)
+        const lotNoColIndex = totalPriceColIndex + 1;
+        const lotExpColIndex = lotNoColIndex + 1;
+        const lotQtyColIndex = lotExpColIndex + 1;
+        const lotStoreColIndex = lotQtyColIndex + 1;
+
+        if (product.lots && product.lots.length > 0) {
+          const firstLot = product.lots[0];
+          row.getCell(lotNoColIndex).value = firstLot.lot_no || "";
+          row.getCell(lotExpColIndex).value = firstLot.exp
+            ? formatDate(firstLot.exp)
+            : "";
+          row.getCell(lotQtyColIndex).value = firstLot.qty || 0;
+          row.getCell(lotQtyColIndex).numFmt = "#,##0.00";
+          row.getCell(lotQtyColIndex).alignment = { horizontal: "right" };
+          row.getCell(lotStoreColIndex).value = firstLot.store
+            ? formatStoreLocation(firstLot.store, true)
+            : "";
+        }
+
+        setRowBorder();
+
+        // LOT อื่น ๆ ของ product เดียวกัน (เพิ่มแถวใหม่โดยไม่ใส่ข้อมูลสินค้า)
+        if (product.lots && product.lots.length > 1) {
+          for (let i = 1; i < product.lots.length; i++) {
+            currentRowIndex += 1;
+            const lotRow = worksheet.getRow(currentRowIndex);
+            const lot = product.lots[i];
+
+            lotRow.getCell(lotNoColIndex).value = lot.lot_no || "";
+            lotRow.getCell(lotExpColIndex).value = lot.exp
+              ? formatDate(lot.exp)
+              : "";
+            lotRow.getCell(lotQtyColIndex).value = lot.qty || 0;
+            lotRow.getCell(lotQtyColIndex).numFmt = "#,##0.00";
+            lotRow.getCell(lotQtyColIndex).alignment = { horizontal: "right" };
+            lotRow.getCell(lotStoreColIndex).value = lot.store
+              ? formatStoreLocation(lot.store, true)
+              : "";
+
+            // ใส่เส้นตารางให้ครบทุกคอลัมน์
+            for (let c = 1; c <= maxCol; c++) {
+              const cell = lotRow.getCell(c);
+              cell.border = {
+                top: { style: "thin" },
+                left: { style: "thin" },
+                bottom: { style: "thin" },
+                right: { style: "thin" },
+              };
+            }
+          }
+        }
 
         totalQty += product.total_qty || 0;
         totalPrice += productTotalPrice;
+
+        // ขยับไปแถวถัดไปสำหรับ product ถัดไป
+        currentRowIndex += 1;
       });
 
       // Footer: รวมจำนวนและรวมราคา
-      const footerRowIndex = headerRowIndex + 1 + allData.length;
+      const footerRowIndex = currentRowIndex;
       const footerRow = worksheet.getRow(footerRowIndex);
       
-      // Merge cells สำหรับ "รวม"
-      const mergeEndCol = 4 + actualStores.length;
-      worksheet.mergeCells(footerRowIndex, 1, footerRowIndex, mergeEndCol + 1);
+      // Merge cells สำหรับข้อความ "รวม" (เฉพาะคอลัมน์ข้อมูลสินค้า ไม่กินคอลัมน์ store)
+      const mergeStartCol = 1;
+      const mergeEndCol = 5; // no ถึง หน่วย
+      worksheet.mergeCells(footerRowIndex, mergeStartCol, footerRowIndex, mergeEndCol);
       const mergedCell = footerRow.getCell(1);
       mergedCell.value = "รวม";
       mergedCell.font = { bold: true };
@@ -420,10 +484,32 @@ export default function NonMovingPage() {
         right: { style: "thin" },
       };
 
-      // รวมจำนวน
-      const totalQtyColIndex = mergeEndCol + 2;
+      // ยอดรวมแต่ละ store
+      const storeStartCol = 6;
+      storeTotals.forEach((storeTotal, idx) => {
+        const colIndex = storeStartCol + idx;
+        const cell = footerRow.getCell(colIndex);
+        cell.value = storeTotal;
+        cell.numFmt = "#,##0.00";
+        cell.alignment = { horizontal: "right" };
+        cell.font = { bold: true };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFE3F2FD" },
+        };
+        cell.border = {
+          top: { style: "thin" },
+          left: { style: "thin" },
+          bottom: { style: "thin" },
+          right: { style: "thin" },
+        };
+      });
+
+      // รวมจำนวนทั้งหมด
+      const totalQtyColIndex = storeStartCol + actualStores.length;
       footerRow.getCell(totalQtyColIndex).value = totalQty;
-      footerRow.getCell(totalQtyColIndex).numFmt = "#,##0.000";
+      footerRow.getCell(totalQtyColIndex).numFmt = "#,##0.00";
       footerRow.getCell(totalQtyColIndex).alignment = { horizontal: "right" };
       footerRow.getCell(totalQtyColIndex).font = { bold: true };
       footerRow.getCell(totalQtyColIndex).fill = {
@@ -438,8 +524,8 @@ export default function NonMovingPage() {
         right: { style: "thin" },
       };
 
-      // รวมราคา
-      const totalPriceColIndex = totalQtyColIndex + 1;
+      // รวมราคาทั้งหมด
+      const totalPriceColIndex = totalQtyColIndex + 2; // ข้ามคอลัมน์ราคา/หน่วย
       footerRow.getCell(totalPriceColIndex).value = totalPrice;
       footerRow.getCell(totalPriceColIndex).numFmt = "#,##0.0000";
       footerRow.getCell(totalPriceColIndex).alignment = { horizontal: "right" };
