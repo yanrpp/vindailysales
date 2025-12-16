@@ -232,26 +232,29 @@ export default function NonMovingPage() {
       // หาช่วงวันที่จาก date_reports
       const dateReports = json.filters?.date_reports || [];
       let dateRange = "";
+      const detailDateList =
+        dateReports && dateReports.length > 0
+          ? dateReports.map((dr: DateReport) => dr.detail_date).join(", ")
+          : "";
       let reportDateForCheck: Date | null = null;
+
       if (dateReports.length > 0) {
-        const dates = dateReports
-          .map((dr: DateReport) => dr.detail_date)
-          .filter((d: string) => {
-            const dt = new Date(d);
-            return !isNaN(dt.getTime());
-          })
-          .sort();
-        if (dates.length > 0) {
-          if (dates.length === 1) {
-            dateRange = dates[0];
-          } else {
-            dateRange = `${dates[0]} ถึง ${dates[dates.length - 1]}`;
-          }
-          // ใช้วันที่ล่าสุดเป็นวันที่ออกรายงานสำหรับตรวจสอบวันหมดอายุ
-          const last = new Date(dates[dates.length - 1]);
-          if (!isNaN(last.getTime())) {
-            reportDateForCheck = last;
-          }
+        // ใช้ค่า detail_date ตรงๆ สำหรับแสดงช่วงวันที่ (ไม่พยายาม parse เป็น Date เพื่อไม่ให้หายกรณีเป็นรูปแบบภาษาไทย)
+        const rawDates = dateReports.map((dr: DateReport) => dr.detail_date);
+        if (rawDates.length === 1) {
+          dateRange = rawDates[0];
+        } else if (rawDates.length > 1) {
+          dateRange = `${rawDates[0]} ถึง ${rawDates[rawDates.length - 1]}`;
+        }
+
+        // แยกอีกครั้งสำหรับใช้ตรวจสอบวันหมดอายุ (พยายาม parse เป็น Date ถ้าทำได้)
+        const parsedDates = rawDates
+          .map((d: string) => new Date(d))
+          .filter((dt: Date) => !isNaN(dt.getTime()))
+          .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+
+        if (parsedDates.length > 0) {
+          reportDateForCheck = parsedDates[parsedDates.length - 1];
         }
       }
       // ถ้าไม่มีข้อมูลวันที่ในรายงาน ให้ใช้วันที่ปัจจุบันเป็นวันที่ออกรายงาน
@@ -274,11 +277,13 @@ export default function NonMovingPage() {
       reportTitleCell.font = { bold: true, size: 12 };
       reportTitleCell.alignment = { horizontal: "center", vertical: "middle" };
 
-      // Header: ช่วงวันที่ (ถ้ามี)
+      // Header: ช่วงวันที่ข้อมูลในรายงาน + รายการวันที่รายงาน (ถ้ามี)
       if (dateRange) {
         worksheet.mergeCells("A3:L3");
         const dateCell = worksheet.getCell("A3");
-        dateCell.value = dateRange;
+        dateCell.value = detailDateList
+          ? `ช่วงวันที่ข้อมูลในรายงาน: ${dateRange}`
+          : `ช่วงวันที่ข้อมูลในรายงาน: ${dateRange}`;
         dateCell.font = { size: 11 };
         dateCell.alignment = { horizontal: "center", vertical: "middle" };
       }
@@ -660,6 +665,18 @@ export default function NonMovingPage() {
       worksheet.getColumn(lotExpColIndex).width = 15; // วันหมดอายุ
       worksheet.getColumn(lotQtyColIndex).width = 15; // จำนวน
       worksheet.getColumn(lotStoreColIndex).width = 20; // สถานที่เก็บ
+
+      // เส้นขอบตารางช่วงท้าย: เติม border ให้ทุกคอลัมน์ของแถว footer ถึงคอลัมน์สุดท้าย
+      for (let col = 1; col <= lotStoreColIndex; col++) {
+        const cell = footerRow.getCell(col);
+        const existingBorder = cell.border || {};
+        cell.border = {
+          top: existingBorder.top || { style: "thin" },
+          left: existingBorder.left || { style: "thin" },
+          bottom: existingBorder.bottom || { style: "thin" },
+          right: existingBorder.right || { style: "thin" },
+        };
+      }
 
       // ตั้งค่าฟอนต์ทั้งชีตเป็น Angsana New ขนาด 16 โดยคงค่า bold/ลักษณะเดิมของ cell ไว้
       worksheet.eachRow((row) => {
@@ -1139,36 +1156,36 @@ export default function NonMovingPage() {
                                 <h4 className="text-sm font-semibold mb-3 text-gray-700">
                                   รายละเอียด LOT ({product.lots.length} รายการ)
                                 </h4>
-                                <div className="overflow-x-auto">
-                                  <Table>
-                                    <TableHeader>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
                                       <TableRow className="bg-gray-100">
                                         <TableHead>LOT No.</TableHead>
                                         <TableHead>วันหมดอายุ</TableHead>
                                         <TableHead>จำนวน</TableHead>
                                         <TableHead>สถานที่เก็บ</TableHead>
-                                      </TableRow>
-                                    </TableHeader>
-                                    <TableBody>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                                       {product.lots.map((lot) => (
                                         <TableRow key={lot.id}>
-                                          <TableCell>
+                      <TableCell>
                                             <code className="text-xs bg-white px-2 py-1 rounded border">
                                               {lot.lot_no}
-                                            </code>
-                                          </TableCell>
-                                          <TableCell>
+                        </code>
+                      </TableCell>
+                      <TableCell>
                                             {lot.exp ? formatDate(lot.exp) : "ไม่ระบุ"}
-                                          </TableCell>
+                      </TableCell>
                                           <TableCell className="font-semibold">
                                             {lot.qty.toLocaleString()}
-                                          </TableCell>
+                      </TableCell>
                                           <TableCell>{lot.store ? formatStoreLocation(lot.store, true) : "-"}</TableCell>
-                                        </TableRow>
-                                      ))}
-                                    </TableBody>
-                                  </Table>
-                                </div>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
                               </div>
                       </TableCell>
                     </TableRow>
