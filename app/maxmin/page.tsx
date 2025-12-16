@@ -21,13 +21,14 @@ import { Upload } from "lucide-react";
 
 interface TableRowData {
   no: number;
+  item_type: string | null;
   item_code: string;
   item_name: string;
   unit: string;
   stock: string;
-  month_1: { label: string; value: number };
-  month_2: { label: string; value: number };
-  month_3: { label: string; value: number };
+  month_1: { label: string; value: number | string };
+  month_2: { label: string; value: number | string };
+  month_3: { label: string; value: number | string };
   min: number;
   max: number;
   average: number;
@@ -37,7 +38,7 @@ interface TableRowData {
   issue_unit: string;
 }
 
-interface DataResponse {
+interface MaxMinResponse {
   data?: TableRowData[];
   total?: number;
   page?: number;
@@ -49,10 +50,11 @@ interface DataResponse {
     c_monthAvg: number;
   };
   report_dates?: string[];
+  item_types?: string[];
   error?: string;
 }
 
-export default function DataPage() {
+export default function MaxMinPage() {
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<TableRowData[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -75,7 +77,25 @@ export default function DataPage() {
     };
     loadDates();
   }, []);
+
+  // ดึงรายการ item_type ที่มีในระบบ
+  useEffect(() => {
+    const loadItemTypes = async () => {
+      try {
+        const response = await fetch("/api/item-types");
+        const json = await response.json();
+        if (response.ok && json.item_types) {
+          setAvailableItemTypes(json.item_types);
+        }
+      } catch (err) {
+        console.error("Error loading item types:", err);
+      }
+    };
+    loadItemTypes();
+  }, []);
   const [searchKeyword, setSearchKeyword] = useState("");
+  const [itemTypeFilter, setItemTypeFilter] = useState("");
+  const [availableItemTypes, setAvailableItemTypes] = useState<string[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [sortBy, setSortBy] = useState<string>("item_name");
@@ -100,6 +120,19 @@ export default function DataPage() {
     }
   }, []);
 
+  // Reload available item types after upload
+  const reloadItemTypes = useCallback(async () => {
+    try {
+      const response = await fetch("/api/item-types");
+      const json = await response.json();
+      if (response.ok && json.item_types) {
+        setAvailableItemTypes(json.item_types);
+      }
+    } catch (err) {
+      console.error("Error loading item types:", err);
+    }
+  }, []);
+
   // ดึงข้อมูล
   const loadData = useCallback(async () => {
     if (reportDates.length === 0) {
@@ -114,6 +147,7 @@ export default function DataPage() {
       const params = new URLSearchParams({
         report_dates: reportDates.join(","),
         search: searchKeyword,
+        item_type: itemTypeFilter,
         page: page.toString(),
         pageSize: pageSize.toString(),
         sortBy: sortBy,
@@ -122,8 +156,8 @@ export default function DataPage() {
         minQuotaMultiplier: minQuotaMultiplier.toString(),
       });
 
-      const response = await fetch(`/api/data?${params}`);
-      const json: DataResponse = await response.json();
+      const response = await fetch(`/api/maxmin?${params}`);
+      const json: MaxMinResponse = await response.json();
 
       if (!response.ok) {
         setError(json.error || "เกิดข้อผิดพลาดในการโหลดข้อมูล");
@@ -144,7 +178,7 @@ export default function DataPage() {
     } finally {
       setLoading(false);
     }
-  }, [reportDates, searchKeyword, page, pageSize, sortBy, sortOrder, maxQuotaMultiplier, minQuotaMultiplier]);
+  }, [reportDates, searchKeyword, itemTypeFilter, page, pageSize, sortBy, sortOrder, maxQuotaMultiplier, minQuotaMultiplier]);
 
   useEffect(() => {
     loadData();
@@ -160,6 +194,7 @@ export default function DataPage() {
     // Headers
     worksheet.addRow([
       "No.",
+      "Item Type",
       "Item Code",
       "Item Name",
       "Unit",
@@ -177,12 +212,13 @@ export default function DataPage() {
     data.forEach((row) => {
       worksheet.addRow([
         row.no,
+        row.item_type || "",
         row.item_code,
         row.item_name,
         row.unit,
-        row.month_1.value,
-        row.month_2.value,
-        row.month_3.value,
+        row.month_1.value === "-" ? "-" : row.month_1.value,
+        row.month_2.value === "-" ? "-" : row.month_2.value,
+        row.month_3.value === "-" ? "-" : row.month_3.value,
         row.min,
         row.max,
         row.average,
@@ -210,6 +246,7 @@ export default function DataPage() {
 
     const headers = [
       "No.",
+      "Item Type",
       "Item Code",
       "Item Name",
       "Unit",
@@ -228,12 +265,13 @@ export default function DataPage() {
       ...data.map((row) =>
         [
           row.no,
+          `"${row.item_type || ""}"`,
           `"${row.item_code}"`,
           `"${row.item_name}"`,
           `"${row.unit}"`,
-          row.month_1.value,
-          row.month_2.value,
-          row.month_3.value,
+          row.month_1.value === "-" ? "-" : row.month_1.value,
+          row.month_2.value === "-" ? "-" : row.month_2.value,
+          row.month_3.value === "-" ? "-" : row.month_3.value,
           row.min,
           row.max,
           row.average,
@@ -273,6 +311,7 @@ export default function DataPage() {
     // Headers (Thai labels)
     worksheet.addRow([
       "ลำดับ",        // No.
+      "ประเภทสินค้า",  // Item Type
       "รหัสสินค้า",    // Item Code
       "รายการสินค้า",  // Item Name
       "หน่วย",        // Unit
@@ -295,6 +334,7 @@ export default function DataPage() {
     data.forEach((row) => {
       worksheet.addRow([
         row.no,              // ลำดับ
+        row.item_type || "", // ประเภทสินค้า
         row.item_code,      // รหัสสินค้า
         row.item_name,      // รายการสินค้า
         row.unit,           // หน่วย
@@ -335,15 +375,59 @@ export default function DataPage() {
     }
   };
 
-  // Add/remove report date
-  const handleDateChange = (index: number, value: string) => {
+  // State สำหรับ dropdown search
+  const [dateSearchTerms, setDateSearchTerms] = useState<string[]>(["", "", ""]);
+  const [dateDropdownOpen, setDateDropdownOpen] = useState<boolean[]>([false, false, false]);
+
+  // Format date สำหรับแสดงผล
+  const formatDateForDisplay = (dateString: string): string => {
+    if (!dateString) return "";
+    const date = new Date(dateString);
+    return date.toLocaleDateString("th-TH", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  // Filter available dates based on search term
+  const getFilteredDates = (index: number): string[] => {
+    const searchTerm = dateSearchTerms[index]?.toLowerCase() || "";
+    return availableDates.filter((date) => {
+      const dateStr = date.toLowerCase();
+      const displayStr = formatDateForDisplay(date).toLowerCase();
+      return dateStr.includes(searchTerm) || displayStr.includes(searchTerm);
+    });
+  };
+
+  // Handle date selection
+  const handleDateSelect = (index: number, selectedDate: string) => {
     const newDates = [...reportDates];
-    if (value) {
-      newDates[index] = value;
-    } else {
-      newDates.splice(index, 1);
-    }
+    newDates[index] = selectedDate;
     setReportDates(newDates.filter((d) => d));
+    setDateSearchTerms((prev) => {
+      const newTerms = [...prev];
+      newTerms[index] = "";
+      return newTerms;
+    });
+    setDateDropdownOpen((prev) => {
+      const newOpen = [...prev];
+      newOpen[index] = false;
+      return newOpen;
+    });
+    setPage(1);
+  };
+
+  // Handle remove date
+  const handleDateRemove = (index: number) => {
+    const newDates = [...reportDates];
+    newDates.splice(index, 1);
+    setReportDates(newDates.filter((d) => d));
+    setDateSearchTerms((prev) => {
+      const newTerms = [...prev];
+      newTerms[index] = "";
+      return newTerms;
+    });
     setPage(1);
   };
 
@@ -354,123 +438,19 @@ export default function DataPage() {
         open={uploadModalOpen}
         onOpenChange={setUploadModalOpen}
         onUploadSuccess={() => {
-          // Reload available dates after successful upload
+          // Reload available dates and item types after successful upload
           reloadDates();
+          reloadItemTypes();
         }}
       />
 
         {/* Filters Card */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg font-medium">Filters & Search</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {/* Report Date Filters */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[0, 1, 2].map((index) => (
-                <div key={index} className="space-y-2">
-                  <Label htmlFor={`date-${index}`} className="text-sm font-medium">
-                  ข้อมูลชุดที่ {index + 1}
-                  </Label>
-                  <Input
-                    id={`date-${index}`}
-                    type="date"
-                    value={reportDates[index] || ""}
-                    onChange={(e) => handleDateChange(index, e.target.value)}
-                    className="w-full"
-                  />
-                </div>
-              ))}
-            </div>
-
-            {/* Search */}
-            <div className="space-y-2">
-              <Label htmlFor="search" className="text-sm font-medium">
-                Search Items
-              </Label>
-              <Input
-                id="search"
-                type="text"
-                placeholder="Search by item code or name..."
-                value={searchKeyword}
-                onChange={(e) => {
-                  setSearchKeyword(e.target.value);
-                  setPage(1);
-                }}
-                className="w-full"
-              />
-            </div>
-
-            {/* Quota Multipliers */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <Label htmlFor="maxQuotaMultiplier" className="text-sm font-medium">
-                  Maximum Quota Multiplier (ตัวคูณจุดสูงสุด)
-                </Label>
-                <Input
-                  id="maxQuotaMultiplier"
-                  type="number"
-                  min="1"
-                  step="0.1"
-                  value={maxQuotaMultiplier}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 10;
-                    setMaxQuotaMultiplier(value);
-                    setPage(1);
-                  }}
-                  className="w-full"
-                />
-                <p className="text-xs text-gray-500">
-                  ค่าเริ่มต้น: 10 (สูตร: max / 30 × {maxQuotaMultiplier})
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="minQuotaMultiplier" className="text-sm font-medium">
-                  Minimum Quota Multiplier (ตัวคูณจุดต่ำสุด)
-                </Label>
-                <Input
-                  id="minQuotaMultiplier"
-                  type="number"
-                  min="1"
-                  step="0.1"
-                  value={minQuotaMultiplier}
-                  onChange={(e) => {
-                    const value = parseFloat(e.target.value) || 5;
-                    setMinQuotaMultiplier(value);
-                    setPage(1);
-                  }}
-                  className="w-full"
-                />
-                <p className="text-xs text-gray-500">
-                  ค่าเริ่มต้น: 5 (สูตร: max / 30 × {minQuotaMultiplier})
-                </p>
-              </div>
-            </div>
-
-            {/* Pagination & Sort Controls */}
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="flex items-center gap-2">
-                <Label htmlFor="pageSize" className="text-sm font-medium">
-                  Rows per page:
-                </Label>
-                <select
-                  id="pageSize"
-                  value={pageSize}
-                  onChange={(e) => {
-                    setPageSize(Number(e.target.value));
-                    setPage(1);
-                  }}
-                  className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
-                >
-                  <option value={20}>20</option>
-                  <option value={50}>50</option>
-                  <option value={100}>100</option>
-                  <option value={1000}>1000</option>
-                </select>
-              </div>
-
+            <div className="flex items-center justify-between flex-wrap gap-4">
+              <CardTitle className="text-lg font-medium">Filters & Search</CardTitle>
               {/* Export Buttons */}
-              <div className="flex gap-2 ml-auto flex-wrap">
+              <div className="flex gap-2 flex-wrap">
                 <Button
                   onClick={() => setUploadModalOpen(true)}
                   variant="default"
@@ -515,6 +495,231 @@ export default function DataPage() {
                 </Button>
               </div>
             </div>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Report Date Filters & Search Items */}
+            <div className="flex flex-wrap items-end gap-4">
+              {/* Report Date Filters */}
+              {[0, 1, 2].map((index) => {
+                const filteredDates = getFilteredDates(index);
+                const selectedDate = reportDates[index];
+                const isOpen = dateDropdownOpen[index];
+
+                return (
+                  <div key={index} className="space-y-2 relative w-[180px]">
+                    <Label htmlFor={`date-${index}`} className="text-sm font-medium">
+                      ข้อมูลชุดที่ {index + 1}
+                    </Label>
+                    <div className="relative">
+                      <div className="flex gap-2">
+                        <div className="flex-1 relative">
+                          <Input
+                            id={`date-${index}`}
+                            type="text"
+                            placeholder="ค้นหาหรือเลือกวันที่..."
+                            value={
+                              isOpen
+                                ? dateSearchTerms[index] || ""
+                                : selectedDate
+                                  ? formatDateForDisplay(selectedDate)
+                                  : ""
+                            }
+                            onChange={(e) => {
+                              const newTerms = [...dateSearchTerms];
+                              newTerms[index] = e.target.value;
+                              setDateSearchTerms(newTerms);
+                              if (!isOpen) {
+                                const newOpen = [...dateDropdownOpen];
+                                newOpen[index] = true;
+                                setDateDropdownOpen(newOpen);
+                              }
+                            }}
+                            onFocus={() => {
+                              const newOpen = [...dateDropdownOpen];
+                              newOpen[index] = true;
+                              setDateDropdownOpen(newOpen);
+                            }}
+                            className="w-full pr-8"
+                          />
+                          {selectedDate && !isOpen && (
+                            <button
+                              type="button"
+                              onClick={() => handleDateRemove(index)}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-red-500"
+                              aria-label="Remove date"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-4 w-4"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          )}
+                          {isOpen && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const newOpen = [...dateDropdownOpen];
+                                newOpen[index] = false;
+                                setDateDropdownOpen(newOpen);
+                                const newTerms = [...dateSearchTerms];
+                                newTerms[index] = "";
+                                setDateSearchTerms(newTerms);
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                              aria-label="Close dropdown"
+                            >
+                              <svg
+                                xmlns="http://www.w3.org/2000/svg"
+                                className="h-4 w-4"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                              >
+                                <line x1="18" y1="6" x2="6" y2="18"></line>
+                                <line x1="6" y1="6" x2="18" y2="18"></line>
+                              </svg>
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      {isOpen && (
+                        <>
+                          <div
+                            className="fixed inset-0 z-[100]"
+                            onClick={() => {
+                              const newOpen = [...dateDropdownOpen];
+                              newOpen[index] = false;
+                              setDateDropdownOpen(newOpen);
+                            }}
+                          />
+                          <div className="absolute z-[110] w-full mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-60 overflow-auto">
+                            {filteredDates.length === 0 ? (
+                              <div className="px-4 py-2 text-sm text-gray-500">
+                                ไม่พบวันที่ที่ค้นหา
+                              </div>
+                            ) : (
+                              filteredDates.map((date) => (
+                                <button
+                                  key={date}
+                                  type="button"
+                                  onClick={() => handleDateSelect(index, date)}
+                                  className={`w-full text-left px-4 py-2 text-sm hover:bg-blue-50 transition-colors ${
+                                    selectedDate === date
+                                      ? "bg-blue-100 font-medium"
+                                      : ""
+                                  }`}
+                                >
+                                  {formatDateForDisplay(date)}
+                                </button>
+                              ))
+                            )}
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Search Items */}
+              <div className="flex items-center gap-2 flex-1 min-w-[300px]">
+                <Label htmlFor="search" className="text-sm font-medium whitespace-nowrap">
+                  Search Items:
+                </Label>
+                <Input
+                  id="search"
+                  type="text"
+                  placeholder="Search by item code or name..."
+                  value={searchKeyword}
+                  onChange={(e) => {
+                    setSearchKeyword(e.target.value);
+                    setPage(1);
+                  }}
+                  className="w-full"
+                />
+              </div>
+
+              {/* Item Type Filter */}
+              <div className="flex items-center gap-2 min-w-[200px]">
+                <Label htmlFor="itemType" className="text-sm font-medium whitespace-nowrap">
+                  Item Type:
+                </Label>
+                <select
+                  id="itemType"
+                  value={itemTypeFilter}
+                  onChange={(e) => {
+                    setItemTypeFilter(e.target.value);
+                    setPage(1);
+                  }}
+                  className="h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                >
+                  <option value="">ทั้งหมด</option>
+                  {availableItemTypes.map((itemType) => (
+                    <option key={itemType} value={itemType}>
+                      {itemType}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Quota Multipliers */}
+            <div className="flex flex-wrap items-end gap-4 pt-2">
+              <div className="flex items-center gap-2">
+                <Label htmlFor="minQuotaMultiplier" className="text-sm font-medium whitespace-nowrap">
+                  Min:
+                </Label>
+                <Input
+                  id="minQuotaMultiplier"
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  value={minQuotaMultiplier}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 5;
+                    setMinQuotaMultiplier(value);
+                    setPage(1);
+                  }}
+                  className="w-24"
+                />
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  (สูตร: max / 30 × {minQuotaMultiplier})
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Label htmlFor="maxQuotaMultiplier" className="text-sm font-medium whitespace-nowrap">
+                  Max:
+                </Label>
+                <Input
+                  id="maxQuotaMultiplier"
+                  type="number"
+                  min="1"
+                  step="0.1"
+                  value={maxQuotaMultiplier}
+                  onChange={(e) => {
+                    const value = parseFloat(e.target.value) || 10;
+                    setMaxQuotaMultiplier(value);
+                    setPage(1);
+                  }}
+                  className="w-24"
+                />
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  (สูตร: max / 30 × {maxQuotaMultiplier})
+                </span>
+              </div>
+            </div>
           </CardContent>
         </Card>
 
@@ -528,11 +733,33 @@ export default function DataPage() {
         {/* Data Table */}
         <Card>
           <CardHeader>
-            <div className="flex items-center justify-between">
+            <div className="flex items-center justify-between flex-wrap gap-4">
               <CardTitle className="text-lg font-medium">Data Table</CardTitle>
-              <span className="text-sm text-gray-500">
-                Total: {total} items | Page {page} of {totalPages}
-              </span>
+              <div className="flex items-center gap-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <Label htmlFor="pageSize" className="text-sm font-medium">
+                    Rows per page:
+                  </Label>
+                  <select
+                    id="pageSize"
+                    value={pageSize}
+                    onChange={(e) => {
+                      setPageSize(Number(e.target.value));
+                      setPage(1);
+                    }}
+                    className="h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                    <option value={100}>100</option>
+                    <option value={1000}>1000</option>
+                    <option value={2000}>2000</option>
+                  </select>
+                </div>
+                <span className="text-sm text-gray-500">
+                  Total: {total} items | Page {page} of {totalPages}
+                </span>
+              </div>
             </div>
           </CardHeader>
           <CardContent>
@@ -565,6 +792,13 @@ export default function DataPage() {
                         </TableHead>
                         <TableHead
                           className="cursor-pointer hover:bg-gray-100"
+                          onClick={() => handleSort("item_type")}
+                        >
+                          Item Type{" "}
+                          {sortBy === "item_type" && (sortOrder === "asc" ? "↑" : "↓")}
+                        </TableHead>
+                        <TableHead
+                          className="cursor-pointer hover:bg-gray-100"
                           onClick={() => handleSort("item_code")}
                         >
                           Item Code{" "}
@@ -579,25 +813,34 @@ export default function DataPage() {
                         </TableHead>
                         <TableHead>Unit</TableHead>
                         <TableHead
-                          className="cursor-pointer hover:bg-gray-100"
+                          className="cursor-pointer hover:bg-blue-50 bg-blue-50/50 font-semibold text-blue-700"
                           onClick={() => handleSort("month_1")}
                         >
-                          เดือน {data.length > 0 && data[0].month_1.label !== "-" && `(${data[0].month_1.label})`}
-                          {sortBy === "month_1" && (sortOrder === "asc" ? "↑" : "↓")}
+                          <span className="text-xs font-normal text-gray-600">เดือน</span>{" "}
+                          {data.length > 0 && data[0].month_1.label !== "-" && (
+                            <span className="font-bold text-blue-800">{data[0].month_1.label}</span>
+                          )}
+                          {sortBy === "month_1" && (sortOrder === "asc" ? " ↑" : " ↓")}
                         </TableHead>
                         <TableHead
-                          className="cursor-pointer hover:bg-gray-100"
+                          className="cursor-pointer hover:bg-green-50 bg-green-50/50 font-semibold text-green-700"
                           onClick={() => handleSort("month_2")}
                         >
-                          เดือน {data.length > 0 && data[0].month_2.label !== "-" && `(${data[0].month_2.label})`}
-                          {sortBy === "month_2" && (sortOrder === "asc" ? "↑" : "↓")}
+                          <span className="text-xs font-normal text-gray-600">เดือน</span>{" "}
+                          {data.length > 0 && data[0].month_2.label !== "-" && (
+                            <span className="font-bold text-green-800">{data[0].month_2.label}</span>
+                          )}
+                          {sortBy === "month_2" && (sortOrder === "asc" ? " ↑" : " ↓")}
                         </TableHead>
                         <TableHead
-                          className="cursor-pointer hover:bg-gray-100"
+                          className="cursor-pointer hover:bg-purple-50 bg-purple-50/50 font-semibold text-purple-700"
                           onClick={() => handleSort("month_3")}
                         >
-                          เดือน {data.length > 0 && data[0].month_3.label !== "-" && `(${data[0].month_3.label})`}
-                          {sortBy === "month_3" && (sortOrder === "asc" ? "↑" : "↓")}
+                          <span className="text-xs font-normal text-gray-600">เดือน</span>{" "}
+                          {data.length > 0 && data[0].month_3.label !== "-" && (
+                            <span className="font-bold text-purple-800">{data[0].month_3.label}</span>
+                          )}
+                          {sortBy === "month_3" && (sortOrder === "asc" ? " ↑" : " ↓")}
                         </TableHead>
                         <TableHead
                           className="cursor-pointer hover:bg-gray-100"
@@ -626,6 +869,9 @@ export default function DataPage() {
                       {data.map((row) => (
                         <TableRow key={row.item_code}>
                           <TableCell className="font-medium">{row.no}</TableCell>
+                          <TableCell className="text-sm text-gray-600">
+                            {row.item_type || "-"}
+                          </TableCell>
                           <TableCell>
                             <code className="text-xs bg-gray-100 px-2 py-1 rounded">
                               {row.item_code}
@@ -633,14 +879,14 @@ export default function DataPage() {
                           </TableCell>
                           <TableCell className="font-medium">{row.item_name}</TableCell>
                           <TableCell>{row.unit}</TableCell>
-                          <TableCell className="font-semibold">
-                            {row.month_1.value}
+                          <TableCell className="font-semibold text-blue-700 bg-blue-50/30">
+                            {row.month_1.value === "-" ? "-" : row.month_1.value}
                           </TableCell>
-                          <TableCell className="font-semibold">
-                            {row.month_2.value}
+                          <TableCell className="font-semibold text-green-700 bg-green-50/30">
+                            {row.month_2.value === "-" ? "-" : row.month_2.value}
                           </TableCell>
-                          <TableCell className="font-semibold">
-                            {row.month_3.value}
+                          <TableCell className="font-semibold text-purple-700 bg-purple-50/30">
+                            {row.month_3.value === "-" ? "-" : row.month_3.value}
                           </TableCell>
                           <TableCell>{row.min}</TableCell>
                           <TableCell>{row.max}</TableCell>

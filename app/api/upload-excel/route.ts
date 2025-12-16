@@ -30,7 +30,7 @@ function getCellValueAsString(cell: ExcelJS.Cell): string {
   return String(cell.value).trim();
 }
 
-// Helper: แปลง cell value เป็น date format (YYYY-MM-DD)
+// Helper: แปลงรูปแบบวันที่หลายๆ แบบเป็น YYYY-MM-DD
 function parseDateFromCell(cellValue: unknown): string | null {
   if (!cellValue) return null;
 
@@ -53,25 +53,110 @@ function parseDateFromCell(cellValue: unknown): string | null {
     return `${year}-${month}-${day}`;
   }
 
-  // ถ้าเป็น string ให้ลอง parse
+  // ถ้าเป็น string ให้ลอง parse รูปแบบต่างๆ
   if (typeof cellValue === "string") {
     const trimmed = cellValue.trim();
     if (!trimmed) return null;
 
-    // ลอง parse เป็น ISO date string
-    const isoDate = new Date(trimmed);
-    if (!isNaN(isoDate.getTime())) {
-      const year = isoDate.getFullYear();
-      const month = String(isoDate.getMonth() + 1).padStart(2, "0");
-      const day = String(isoDate.getDate()).padStart(2, "0");
+    // ลอง parse วันที่ไทยแบบเต็ม (เช่น "30 กันยายน 2568")
+    const thaiDateResult = parseThaiDate(trimmed);
+    if (thaiDateResult) return thaiDateResult;
+
+    // ลอง parse รูปแบบ DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
+    const slashDateResult = parseSlashDate(trimmed);
+    if (slashDateResult) return slashDateResult;
+
+    // ลอง parse รูปแบบ DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
+    const dashDateResult = parseDashDate(trimmed);
+    if (dashDateResult) return dashDateResult;
+
+    // ลอง parse รูปแบบ YYYY-MM-DD (ISO format)
+    const isoDateResult = parseISODate(trimmed);
+    if (isoDateResult) return isoDateResult;
+
+    // ลอง parse ด้วย Date object (fallback)
+    const dateObj = new Date(trimmed);
+    if (!isNaN(dateObj.getTime())) {
+      const year = dateObj.getFullYear();
+      const month = String(dateObj.getMonth() + 1).padStart(2, "0");
+      const day = String(dateObj.getDate()).padStart(2, "0");
       return `${year}-${month}-${day}`;
     }
-
-    // ลอง parse วันที่ไทย
-    return parseThaiDate(trimmed);
   }
 
   return null;
+}
+
+// Helper: แปลงรูปแบบ DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
+function parseSlashDate(str: string): string | null {
+  // รูปแบบ: DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
+  const slashPattern = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const match = str.match(slashPattern);
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  let year = parseInt(match[3], 10);
+
+  // ตรวจสอบว่าเป็นปี พ.ศ. (มากกว่า 2500) หรือ ค.ศ.
+  if (year > 2500) {
+    year = year - 543; // แปลงจาก พ.ศ. เป็น ค.ศ.
+  }
+
+  // ตรวจสอบความถูกต้องของวันที่
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Helper: แปลงรูปแบบ DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
+function parseDashDate(str: string): string | null {
+  // รูปแบบ: DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
+  const dashPattern = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
+  const match = str.match(dashPattern);
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  let year = parseInt(match[3], 10);
+
+  // ตรวจสอบว่าเป็นปี พ.ศ. (มากกว่า 2500) หรือ ค.ศ.
+  if (year > 2500) {
+    year = year - 543; // แปลงจาก พ.ศ. เป็น ค.ศ.
+  }
+
+  // ตรวจสอบความถูกต้องของวันที่
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Helper: แปลงรูปแบบ YYYY-MM-DD (ISO format)
+function parseISODate(str: string): string | null {
+  // รูปแบบ: YYYY-MM-DD
+  const isoPattern = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+  const match = str.match(isoPattern);
+  if (!match) return null;
+
+  let year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  // ตรวจสอบว่าเป็นปี พ.ศ. (มากกว่า 2500) หรือ ค.ศ.
+  if (year > 2500) {
+    year = year - 543; // แปลงจาก พ.ศ. เป็น ค.ศ.
+  }
+
+  // ตรวจสอบความถูกต้องของวันที่
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 // Helper: แปลงวันที่ไทยแบบ "30 กันยายน 2568"
@@ -174,6 +259,7 @@ function processSheet(
     quantity: number;
     unit_price: number;
     total_amount: number;
+    item_type: string | null;
   }>;
 } {
   let category = "";
@@ -219,12 +305,59 @@ function processSheet(
     quantity: number;
     unit_price: number;
     total_amount: number;
+    item_type: string | null;
   }> = [];
 
-  raw.forEach((row: unknown[]) => {
+  // เก็บ item_type ปัจจุบันเพื่อใช้กับรายการถัดไป
+  let currentItemType: string | null = null;
+
+  raw.forEach((row: unknown[], rowIndex: number) => {
     if (!row || (row as unknown[]).length < 5) return;
+    
+    // ตรวจสอบว่าถ้าเจอแถวว่างและแถวนั้นอยู่ก่อนหน้าแถวที่คอลัมน์ B มีค่า "สินค้าฝากขาย" ให้ข้าม 2 แถวนี้
+    if (rowIndex > 0) {
+      const previousRow = raw[rowIndex - 1];
+      const currentRowB = String((row as string[])[1] || "").trim();
+      
+      // ตรวจสอบว่าแถวก่อนหน้าว่างเปล่า (คอลัมน์ A ว่าง) และแถวปัจจุบันคอลัมน์ B มีค่า "สินค้าฝากขาย"
+      if (previousRow && previousRow.length > 0) {
+        const previousRowA = String((previousRow as string[])[0] || "").trim();
+        if (!previousRowA && currentRowB === "สินค้าฝากขาย") {
+          // ข้าม 2 แถวนี้ (แถวปัจจุบันและแถวก่อนหน้า)
+          return;
+        }
+      }
+    }
+
     const no = parseInt((row as string[])[0], 10);
     if (isNaN(no)) return; // ข้ามหัวตาราง
+
+    // ดึง item_type จากคอลัมน์ A (index 0) ของแถวที่อยู่ 1 แถวก่อนหน้า
+    let itemType: string | null = currentItemType; // ใช้ค่าเดิมก่อน
+    
+    if (rowIndex >= 1) {
+      const oneRowBefore = raw[rowIndex - 1];
+      if (oneRowBefore && oneRowBefore.length > 0) {
+        const cellValue = String((oneRowBefore as string[])[0] || "").trim();
+        const colB = String((oneRowBefore as string[])[1] || "").trim();
+        const colC = String((oneRowBefore as string[])[2] || "").trim();
+        
+        // ถ้ามีค่าในคอลัมน์ A และคอลัมน์ B, C ว่างเปล่า (นี่คือ item_type header)
+        // หรือมีคำว่า "เวชภัณฑ์" หรือ "วัสดุ"
+        if (cellValue) {
+          const isEmptyRow = !colB && !colC; // ตรวจสอบว่าคอลัมน์ B, C ว่างเปล่า
+          const isItemTypePattern = cellValue.includes("เวชภัณฑ์") || cellValue.includes("วัสดุ");
+          
+          if (isEmptyRow || isItemTypePattern) {
+            itemType = cellValue;
+            currentItemType = cellValue; // อัปเดต currentItemType เพื่อใช้กับรายการถัดไป
+          }
+        } else {
+          // ถ้าแถวก่อนหน้าว่างเปล่า ให้ใช้ item_type เดิม (currentItemType)
+          itemType = currentItemType;
+        }
+      }
+    }
 
     // แปลงค่าให้เป็น string ที่รองรับ UTF-8
     const itemCode = String((row as string[])[1] || "").trim();
@@ -242,6 +375,7 @@ function processSheet(
       quantity: quantity,
       unit_price: unitPrice,
       total_amount: totalAmount,
+      item_type: itemType,
     });
   });
 
