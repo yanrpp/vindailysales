@@ -1,0 +1,136 @@
+// Prisma Schema for Vercel Postgres / PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// 1. User & Authentication
+model User {
+  id           String    @id @default(uuid())
+  username     String    @unique
+  name         String?
+  passwordHash String    @map("password_hash")
+  role         String    @default("user") // "admin" | "user"
+  isActive     Boolean   @default(true) @map("is_active")
+  isApproved   Boolean   @default(false) @map("is_approved")
+  lastLogin    DateTime? @map("last_login")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+// 2. Daily Sales Report (หัวรายงานยอดขายประจำวัน)
+model DailySaleReport {
+  id         String          @id @default(uuid())
+  reportDate String?         @map("report_date")
+  store      String?
+  category   String?
+  printedAt  DateTime?       @map("printed_at")
+  filename   String?
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+  items      DailySaleItem[]
+
+  @@map("daily_sale_reports")
+}
+
+// 3. Daily Sales Items (รายการยอดขาย)
+model DailySaleItem {
+  id          String          @id @default(uuid())
+  reportId    String          @map("report_id")
+  report      DailySaleReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  itemNo      Int?            @map("item_no")
+  itemCode    String          @map("item_code")
+  itemName    String          @map("item_name")
+  unit        String?
+  quantity    Float           @default(0)
+  unitPrice   Float           @default(0) @map("unit_price")
+  totalAmount Float           @default(0) @map("total_amount")
+  itemType    String?         @map("item_type")
+  createdAt   DateTime        @default(now()) @map("created_at")
+  updatedAt   DateTime        @updatedAt @map("updated_at")
+
+  @@index([reportId])
+  @@index([itemCode])
+  @@index([itemType])
+  @@map("daily_sale_items")
+}
+
+// 4. Date Report (สำหรับระบบคลังสินค้า)
+model DateReport {
+  id         String    @id @default(uuid())
+  detailDate String    @unique @map("detail_date")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  products   Product[]
+
+  @@index([detailDate])
+  @@map("date_report")
+}
+
+// 5. Products (ข้อมูลสินค้าในคลัง)
+model Product {
+  id            String       @id @default(uuid())
+  productCode   String       @map("product_code")
+  description   String?
+  um            String?
+  cost          Float?
+  storeLocation String?      @map("store_location")
+  itemType      String?      @map("item_type")
+  idDate        String?      @map("id_date")
+  dateReport    DateReport?  @relation(fields: [idDate], references: [id], onDelete: SetNull)
+  createdAt     DateTime     @default(now()) @map("created_at")
+  updatedAt     DateTime     @updatedAt @map("updated_at")
+  lots          ProductLot[]
+
+  @@index([productCode])
+  @@index([storeLocation])
+  @@index([itemType])
+  @@index([idDate])
+  @@map("products")
+}
+
+// 6. Product Lots (Lot สินค้า และจำนวนคงเหลือ)
+model ProductLot {
+  id                 String               @id @default(uuid())
+  productId          String               @map("product_id")
+  product            Product              @relation(fields: [productId], references: [id], onDelete: Cascade)
+  lotNo              String               @map("lot_no")
+  exp                DateTime?
+  qty                Float                @default(0)
+  store              String?
+  createdAt          DateTime             @default(now()) @map("created_at")
+  updatedAt          DateTime             @updatedAt @map("updated_at")
+  stockRecords       ProductStockRecord[]
+
+  @@unique([productId, lotNo])
+  @@index([productId])
+  @@index([lotNo])
+  @@map("product_lots")
+}
+
+// 7. Product Stock Records (ประวัติยอดสต็อก)
+model ProductStockRecord {
+  id            String     @id @default(uuid())
+  lotId         String     @map("lot_id")
+  lot           ProductLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  reportDate    DateTime   @map("report_date")
+  qty           Float      @default(0)
+  storeLocation String?    @map("store_location")
+  um            String?
+  cost          Float?
+  otherData     Json?      @map("other_data")
+  createdAt     DateTime   @default(now()) @map("created_at")
+  updatedAt     DateTime   @updatedAt @map("updated_at")
+
+  @@index([lotId])
+  @@index([reportDate])
+  @@map("product_stock_records")
+}

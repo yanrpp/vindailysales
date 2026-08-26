@@ -1,22 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   try {
-    // ดึงรายการ item_type ที่ไม่ซ้ำกันจาก daily_sale_items
-    const { data, error } = await supabase
-      .from("daily_sale_items")
-      .select("item_type")
-      .not("item_type", "is", null);
+    const data = await prisma.dailySaleItem.findMany({
+      where: {
+        itemType: { not: null },
+      },
+      select: {
+        itemType: true,
+      },
+      distinct: ["itemType"],
+      orderBy: {
+        itemType: "asc",
+      },
+    });
 
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // แยก item_type ที่ไม่ซ้ำกันและเรียงลำดับ
-    const uniqueItemTypes = Array.from(
-      new Set(data?.map((item) => item.item_type).filter(Boolean) || []),
-    ).sort();
+    const uniqueItemTypes = data
+      .map((item) => item.itemType)
+      .filter((type): type is string => Boolean(type && type.trim().length > 0));
 
     return NextResponse.json({ item_types: uniqueItemTypes });
   } catch (err: unknown) {

@@ -1,6 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { prisma } from "@/lib/prisma";
 import ExcelJS from "exceljs";
+
+const thaiMonths: Record<string, number> = {
+  "มกราคม": 1,
+  "กุมภาพันธ์": 2,
+  "มีนาคม": 3,
+  "เมษายน": 4,
+  "พฤษภาคม": 5,
+  "มิถุนายน": 6,
+  "กรกฎาคม": 7,
+  "สิงหาคม": 8,
+  "กันยายน": 9,
+  "ตุลาคม": 10,
+  "พฤศจิกายน": 11,
+  "ธันวาคม": 12,
+};
 
 // Helper: แปลง cell value เป็น string ที่รองรับ UTF-8 และตัวอักษรไทย
 function getCellValueAsString(cell: ExcelJS.Cell): string {
@@ -30,11 +45,89 @@ function getCellValueAsString(cell: ExcelJS.Cell): string {
   return String(cell.value).trim();
 }
 
+// Helper: แปลงวันที่ไทยแบบ "30 กันยายน 2568"
+function parseThaiDate(str: string): string | null {
+  if (!str) return null;
+
+  const parts = str.split(" ");
+  if (parts.length < 3) return null;
+
+  const day = parseInt(parts[0], 10);
+  const month = thaiMonths[parts[1]];
+  const year = parseInt(parts[2], 10) - 543;
+
+  if (!month || isNaN(day) || isNaN(year)) return null;
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Helper: แปลงรูปแบบ DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
+function parseSlashDate(str: string): string | null {
+  const slashPattern = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
+  const match = str.match(slashPattern);
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  let year = parseInt(match[3], 10);
+
+  if (year > 2500) {
+    year = year - 543;
+  }
+
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Helper: แปลงรูปแบบ DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
+function parseDashDate(str: string): string | null {
+  const dashPattern = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
+  const match = str.match(dashPattern);
+  if (!match) return null;
+
+  const day = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  let year = parseInt(match[3], 10);
+
+  if (year > 2500) {
+    year = year - 543;
+  }
+
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
+// Helper: แปลงรูปแบบ YYYY-MM-DD (ISO format)
+function parseISODate(str: string): string | null {
+  const isoPattern = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
+  const match = str.match(isoPattern);
+  if (!match) return null;
+
+  let year = parseInt(match[1], 10);
+  const month = parseInt(match[2], 10);
+  const day = parseInt(match[3], 10);
+
+  if (year > 2500) {
+    year = year - 543;
+  }
+
+  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
+    return null;
+  }
+
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+
 // Helper: แปลงรูปแบบวันที่หลายๆ แบบเป็น YYYY-MM-DD
 function parseDateFromCell(cellValue: unknown): string | null {
   if (!cellValue) return null;
 
-  // ถ้าเป็น Date object อยู่แล้ว
   if (cellValue instanceof Date) {
     const year = cellValue.getFullYear();
     const month = String(cellValue.getMonth() + 1).padStart(2, "0");
@@ -42,10 +135,8 @@ function parseDateFromCell(cellValue: unknown): string | null {
     return `${year}-${month}-${day}`;
   }
 
-  // ถ้าเป็น number (Excel date serial number)
   if (typeof cellValue === "number") {
-    // Excel date serial number: วันที่ 1 มกราคม 1900 = 1
-    const excelEpoch = new Date(1899, 11, 30); // Excel epoch (December 30, 1899)
+    const excelEpoch = new Date(1899, 11, 30);
     const date = new Date(excelEpoch.getTime() + cellValue * 24 * 60 * 60 * 1000);
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -53,28 +144,22 @@ function parseDateFromCell(cellValue: unknown): string | null {
     return `${year}-${month}-${day}`;
   }
 
-  // ถ้าเป็น string ให้ลอง parse รูปแบบต่างๆ
   if (typeof cellValue === "string") {
     const trimmed = cellValue.trim();
     if (!trimmed) return null;
 
-    // ลอง parse วันที่ไทยแบบเต็ม (เช่น "30 กันยายน 2568")
     const thaiDateResult = parseThaiDate(trimmed);
     if (thaiDateResult) return thaiDateResult;
 
-    // ลอง parse รูปแบบ DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
     const slashDateResult = parseSlashDate(trimmed);
     if (slashDateResult) return slashDateResult;
 
-    // ลอง parse รูปแบบ DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
     const dashDateResult = parseDashDate(trimmed);
     if (dashDateResult) return dashDateResult;
 
-    // ลอง parse รูปแบบ YYYY-MM-DD (ISO format)
     const isoDateResult = parseISODate(trimmed);
     if (isoDateResult) return isoDateResult;
 
-    // ลอง parse ด้วย Date object (fallback)
     const dateObj = new Date(trimmed);
     if (!isNaN(dateObj.getTime())) {
       const year = dateObj.getFullYear();
@@ -87,109 +172,6 @@ function parseDateFromCell(cellValue: unknown): string | null {
   return null;
 }
 
-// Helper: แปลงรูปแบบ DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
-function parseSlashDate(str: string): string | null {
-  // รูปแบบ: DD/MM/YYYY หรือ DD/MM/YYYY (พ.ศ.)
-  const slashPattern = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/;
-  const match = str.match(slashPattern);
-  if (!match) return null;
-
-  const day = parseInt(match[1], 10);
-  const month = parseInt(match[2], 10);
-  let year = parseInt(match[3], 10);
-
-  // ตรวจสอบว่าเป็นปี พ.ศ. (มากกว่า 2500) หรือ ค.ศ.
-  if (year > 2500) {
-    year = year - 543; // แปลงจาก พ.ศ. เป็น ค.ศ.
-  }
-
-  // ตรวจสอบความถูกต้องของวันที่
-  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
-    return null;
-  }
-
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-// Helper: แปลงรูปแบบ DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
-function parseDashDate(str: string): string | null {
-  // รูปแบบ: DD-MM-YYYY หรือ DD-MM-YYYY (พ.ศ.)
-  const dashPattern = /^(\d{1,2})-(\d{1,2})-(\d{4})$/;
-  const match = str.match(dashPattern);
-  if (!match) return null;
-
-  const day = parseInt(match[1], 10);
-  const month = parseInt(match[2], 10);
-  let year = parseInt(match[3], 10);
-
-  // ตรวจสอบว่าเป็นปี พ.ศ. (มากกว่า 2500) หรือ ค.ศ.
-  if (year > 2500) {
-    year = year - 543; // แปลงจาก พ.ศ. เป็น ค.ศ.
-  }
-
-  // ตรวจสอบความถูกต้องของวันที่
-  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
-    return null;
-  }
-
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-// Helper: แปลงรูปแบบ YYYY-MM-DD (ISO format)
-function parseISODate(str: string): string | null {
-  // รูปแบบ: YYYY-MM-DD
-  const isoPattern = /^(\d{4})-(\d{1,2})-(\d{1,2})$/;
-  const match = str.match(isoPattern);
-  if (!match) return null;
-
-  let year = parseInt(match[1], 10);
-  const month = parseInt(match[2], 10);
-  const day = parseInt(match[3], 10);
-
-  // ตรวจสอบว่าเป็นปี พ.ศ. (มากกว่า 2500) หรือ ค.ศ.
-  if (year > 2500) {
-    year = year - 543; // แปลงจาก พ.ศ. เป็น ค.ศ.
-  }
-
-  // ตรวจสอบความถูกต้องของวันที่
-  if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > 2100) {
-    return null;
-  }
-
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-// Helper: แปลงวันที่ไทยแบบ "30 กันยายน 2568"
-function parseThaiDate(str: string): string | null {
-  if (!str) return null;
-
-  const thaiMonths: Record<string, number> = {
-    "มกราคม": 1,
-    "กุมภาพันธ์": 2,
-    "มีนาคม": 3,
-    "เมษายน": 4,
-    "พฤษภาคม": 5,
-    "มิถุนายน": 6,
-    "กรกฎาคม": 7,
-    "สิงหาคม": 8,
-    "กันยายน": 9,
-    "ตุลาคม": 10,
-    "พฤศจิกายน": 11,
-    "ธันวาคม": 12,
-  };
-
-  const parts = str.split(" ");
-  if (parts.length < 3) return null;
-
-  const day = parseInt(parts[0], 10);
-  const month = thaiMonths[parts[1]];
-  const year = parseInt(parts[2], 10) - 543;
-
-  if (!month) return null;
-
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
 // Helper: ตรวจสอบ duplicate report_date, store, category
 async function checkDuplicateReport(
   reportDate: string | null,
@@ -200,21 +182,27 @@ async function checkDuplicateReport(
     return { isDuplicate: false };
   }
 
-  const { data, error } = await supabase
-    .from("daily_sale_reports")
-    .select("id, report_date, store, category, filename")
-    .eq("report_date", reportDate)
-    .ilike("store", `%${store}%`)
-    .ilike("category", `%${category}%`)
-    .limit(1);
+  try {
+    const existingReport = await prisma.dailySaleReport.findFirst({
+      where: {
+        reportDate: reportDate,
+        store: { contains: store, mode: "insensitive" },
+        category: { contains: category, mode: "insensitive" },
+      },
+      select: {
+        id: true,
+        reportDate: true,
+        store: true,
+        category: true,
+        filename: true,
+      },
+    });
 
-  if (error) {
-    // ถ้ามี error ในการ query ให้ข้ามการตรวจสอบ (ไม่ block การ insert)
+    if (existingReport) {
+      return { isDuplicate: true, existingReport };
+    }
+  } catch (error) {
     return { isDuplicate: false };
-  }
-
-  if (data && data.length > 0) {
-    return { isDuplicate: true, existingReport: data[0] };
   }
 
   return { isDuplicate: false };
@@ -414,7 +402,7 @@ export async function POST(req: NextRequest) {
     const allResults: Array<{
       filename: string;
       sheet_name: string;
-      report_id: number;
+      report_id: string;
       rows: number;
     }> = [];
 
@@ -426,7 +414,7 @@ export async function POST(req: NextRequest) {
 
       const fileResults: Array<{
         sheet_name: string;
-        report_id: number;
+        report_id: string;
         rows: number;
       }> = [];
 
@@ -505,19 +493,15 @@ export async function POST(req: NextRequest) {
       // -----------------------------
       // Insert Header -> daily_sale_reports
       // -----------------------------
-      const { data: reportData, error: reportErr } = await supabase
-        .from("daily_sale_reports")
-        .insert({
-          report_date: reportDate,
-          store,
-          category,
-          printed_at: printedAt ? new Date(printedAt) : null,
+      const reportData = await prisma.dailySaleReport.create({
+        data: {
+          reportDate: reportDate || null,
+          store: store || null,
+          category: category || null,
+          printedAt: printedAt ? new Date(printedAt) : null,
           filename: `${currentFile.name} (${sheetName})`,
-        })
-        .select()
-        .single();
-
-      if (reportErr) throw reportErr;
+        },
+      });
 
       const reportId = reportData.id;
 
@@ -525,15 +509,20 @@ export async function POST(req: NextRequest) {
       // Insert Items -> daily_sale_items
       // -----------------------------
       const itemsToInsert = items.map((x) => ({
-        report_id: reportId,
-        ...x,
+        reportId: reportId,
+        itemNo: x.item_no,
+        itemCode: x.item_code,
+        itemName: x.item_name,
+        unit: x.unit || null,
+        quantity: x.quantity || 0,
+        unitPrice: x.unit_price || 0,
+        totalAmount: x.total_amount || 0,
+        itemType: x.item_type || null,
       }));
 
-      const { error: itemErr } = await supabase
-        .from("daily_sale_items")
-        .insert(itemsToInsert);
-
-      if (itemErr) throw itemErr;
+      await prisma.dailySaleItem.createMany({
+        data: itemsToInsert,
+      });
 
       fileResults.push({
         sheet_name: sheetName,

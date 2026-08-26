@@ -2,11 +2,10 @@
  * Script สำหรับสร้าง admin user เริ่มต้น
  * รันด้วย: npx tsx scripts/create-admin.ts
  * 
- * หมายเหตุ: ตอนนี้ใช้ Supabase database แล้ว
- * ต้องตั้งค่า NEXT_PUBLIC_SUPABASE_URL และ SUPABASE_SERVICE_ROLE_KEY ใน .env.local
+ * ใช้ Prisma Database (Vercel Postgres / PostgreSQL)
+ * ต้องตั้งค่า DATABASE_URL ใน .env.local
  */
 
-// โหลด environment variables
 import { config } from "dotenv";
 import { resolve } from "path";
 
@@ -21,10 +20,9 @@ async function createAdminUser() {
   const password = process.env.ADMIN_PASSWORD || "admin123";
 
   try {
-    // ตรวจสอบ environment variables
-    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
-      console.error("❌ Error: Missing Supabase environment variables!");
-      console.error("   Please set NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in .env.local");
+    if (!process.env.DATABASE_URL) {
+      console.error("❌ Error: Missing DATABASE_URL environment variable!");
+      console.error("   Please set DATABASE_URL in .env.local");
       process.exit(1);
     }
 
@@ -44,7 +42,7 @@ async function createAdminUser() {
       passwordHash,
       role: "admin",
       isActive: true,
-      isApproved: true, // Admin user จะได้รับการอนุมัติทันที
+      isApproved: true,
     });
 
     console.log("✅ Admin user created successfully!");
@@ -59,4 +57,3 @@ async function createAdminUser() {
 }
 
 createAdminUser();
-

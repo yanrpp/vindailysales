@@ -1,25 +1,24 @@
 import { NextRequest, NextResponse } from "next/server";
-import { supabase } from "@/lib/supabase";
+import { prisma } from "@/lib/prisma";
 
 export async function GET(req: NextRequest) {
   try {
-    // ดึงรายการ report_date ที่ไม่ซ้ำกัน
-    const { data, error } = await supabase
-      .from("daily_sale_reports")
-      .select("report_date")
-      .order("report_date", { ascending: false });
-
-    if (error) {
-      return NextResponse.json({ error: error.message }, { status: 500 });
-    }
-
-    // แยก report_date ที่ไม่ซ้ำกัน
-    const uniqueDates = Array.from(
-      new Set(data?.map((item) => item.report_date).filter(Boolean) || []),
-    ).sort((a, b) => {
-      // Sort descending (newest first)
-      return new Date(b).getTime() - new Date(a).getTime();
+    const data = await prisma.dailySaleReport.findMany({
+      where: {
+        reportDate: { not: null },
+      },
+      select: {
+        reportDate: true,
+      },
+      distinct: ["reportDate"],
+      orderBy: {
+        reportDate: "desc",
+      },
     });
+
+    const uniqueDates = data
+      .map((item) => item.reportDate)
+      .filter((date): date is string => Boolean(date));
 
     return NextResponse.json({ dates: uniqueDates });
   } catch (err: unknown) {
@@ -27,4 +26,3 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
 }
-
