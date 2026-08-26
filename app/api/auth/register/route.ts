@@ -1,11 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createUser, findUserByUsername } from "@/lib/auth/user-storage";
-import { hashPassword, generateToken } from "@/lib/auth/auth-utils";
+import { hashPassword } from "@/lib/auth/auth-utils";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
 
 export async function POST(req: NextRequest) {
   try {
+    const clientIp = getClientIp(req);
+    const rateLimit = checkRateLimit(`register_${clientIp}`, 5, 60 * 1000); // Max 5 registrations per minute per IP
+
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { error: "Too many registration attempts. Please wait a moment." },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
-    const { username, password, name, role } = body;
+    const { username, password, name } = body;
 
     // ตรวจสอบ input
     if (!username || !password) {
@@ -15,8 +26,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const cleanUsername = String(username).trim();
+
+    if (cleanUsername.length < 3) {
+      return NextResponse.json(
+        { error: "Username must be at least 3 characters" },
+        { status: 400 }
+      );
+    }
+
     // ตรวจสอบความยาว password
-    if (password.length < 6) {
+    if (String(password).length < 6) {
       return NextResponse.json(
         { error: "Password must be at least 6 characters" },
         { status: 400 }
@@ -24,7 +44,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ตรวจสอบ username ซ้ำ
-    const existingUser = await findUserByUsername(username);
+    const existingUser = await findUserByUsername(cleanUsername);
     if (existingUser) {
       return NextResponse.json(
         { error: "Username already exists" },
@@ -35,25 +55,22 @@ export async function POST(req: NextRequest) {
     // Hash password
     const passwordHash = await hashPassword(password);
 
-    // สร้าง user ใหม่ (default role เป็น 'user' ถ้าไม่ระบุ)
-    // ผู้ใช้ที่สมัครใหม่ต้องรอการอนุมัติจาก admin (isApproved = false)
+    // สร้าง user ใหม่ (ป้องกัน Privilege Escalation: สาธารณะสมัครได้เฉพาะ role 'user' เสมอ)
     const newUser = await createUser({
-      username,
-      name: name || undefined,
+      username: cleanUsername,
+      name: name ? String(name).trim() : undefined,
       passwordHash,
-      role: role === "admin" ? "admin" : "user",
+      role: "user", // Enforce standard user role
       isActive: true,
       isApproved: false, // ต้องรอการอนุมัติจาก admin
     });
 
-    // ไม่สร้าง token ให้ผู้ใช้ที่ยังไม่ได้รับการอนุมัติ
-    // ส่ง response (ไม่ส่ง password hash)
     const { passwordHash: _, ...userWithoutPassword } = newUser;
 
     return NextResponse.json(
       {
         success: true,
-        message: "✅ “ลงทะเบียนสำเร็จแล้ว บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ”",
+        message: "ลงทะเบียนสำเร็จแล้ว บัญชีของคุณกำลังรอการอนุมัติจากผู้ดูแลระบบ",
         pendingApproval: true,
         user: userWithoutPassword,
       },
@@ -62,9 +79,8 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error("Register error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Registration service temporarily unavailable" },
       { status: 500 }
     );
   }
 }
-

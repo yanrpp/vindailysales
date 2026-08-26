@@ -267,13 +267,10 @@ export async function GET(req: NextRequest) {
       report_dates: reportDatesArray,
     });
   } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    const errorMessage = err instanceof Error ? err.message : "Calculation service error";
     console.error("Error in /api/maxmin:", err);
     return NextResponse.json(
-      {
-        error: errorMessage,
-        details: err instanceof Error ? err.stack : undefined,
-      },
+      { error: errorMessage },
       { status: 500 }
     );
   }

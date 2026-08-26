@@ -378,7 +378,9 @@ function processSheet(
   };
 }
 
-export async function POST(req: NextRequest) {
+import { requireAuth } from "@/lib/auth/middleware";
+
+export const POST = requireAuth(async (req) => {
   try {
     const formData = await req.formData();
     
@@ -452,7 +454,7 @@ export async function POST(req: NextRequest) {
       }
 
       // -----------------------------
-      // ตรวจสอบ duplicate report_date
+      // ตรวจสอบ duplicate report_date, store, category
       // -----------------------------
       const duplicateCheck = await checkDuplicateReport(
         reportDate,
@@ -460,19 +462,19 @@ export async function POST(req: NextRequest) {
         category,
       );
 
-        if (duplicateCheck.isDuplicate) {
-          const existingReport = duplicateCheck.existingReport;
-          const errorMessage = `พบรายการซ้ำในระบบ:\n\n` +
-            `📅 วันที่รายงาน: ${reportDate}\n` +
-            `🏪 ห้องจ่ายยา: ${store}\n` +
-            `📦 หมวดหมู่: ${category}\n\n` +
-            `รายการที่มีอยู่แล้ว:\n` +
-            `  • Report ID: ${existingReport.id}\n` +
-            `  • ชื่อไฟล์: ${existingReport.filename || "N/A"}\n\n` +
-            `ไฟล์: ${currentFile.name}\n` +
-            `Sheet: ${sheetName}`;
-          
-          return NextResponse.json(
+      if (duplicateCheck.isDuplicate) {
+        const existingReport = duplicateCheck.existingReport;
+        const errorMessage =
+          `พบข้อมูลซ้ำในระบบ:\n` +
+          `  • วันที่: ${reportDate || "ไม่ระบุ"}\n` +
+          `  • สโตร์: ${store || "ไม่ระบุ"}\n` +
+          `  • หมวดหมู่: ${category || "ไม่ระบุ"}\n` +
+          `  • Report ID: ${existingReport.id}\n` +
+          `  • ชื่อไฟล์: ${existingReport.filename || "N/A"}\n\n` +
+          `ไฟล์: ${currentFile.name}\n` +
+          `Sheet: ${sheetName}`;
+        
+        return NextResponse.json(
           {
             error: "DUPLICATE_REPORT",
             message: errorMessage,
@@ -491,38 +493,39 @@ export async function POST(req: NextRequest) {
       }
 
       // -----------------------------
-      // Insert Header -> daily_sale_reports
+      // Insert Header & Items in Transaction -> daily_sale_reports & daily_sale_items
       // -----------------------------
-      const reportData = await prisma.dailySaleReport.create({
-        data: {
-          reportDate: reportDate || null,
-          store: store || null,
-          category: category || null,
-          printedAt: printedAt ? new Date(printedAt) : null,
-          filename: `${currentFile.name} (${sheetName})`,
-        },
+      const reportData = await prisma.$transaction(async (tx) => {
+        const report = await tx.dailySaleReport.create({
+          data: {
+            reportDate: reportDate || null,
+            store: store || null,
+            category: category || null,
+            printedAt: printedAt ? new Date(printedAt) : null,
+            filename: `${currentFile.name} (${sheetName})`,
+          },
+        });
+
+        const itemsToInsert = items.map((x) => ({
+          reportId: report.id,
+          itemNo: x.item_no,
+          itemCode: x.item_code,
+          itemName: x.item_name,
+          unit: x.unit || null,
+          quantity: x.quantity || 0,
+          unitPrice: x.unit_price || 0,
+          totalAmount: x.total_amount || 0,
+          itemType: x.item_type || null,
+        }));
+
+        await tx.dailySaleItem.createMany({
+          data: itemsToInsert,
+        });
+
+        return report;
       });
 
       const reportId = reportData.id;
-
-      // -----------------------------
-      // Insert Items -> daily_sale_items
-      // -----------------------------
-      const itemsToInsert = items.map((x) => ({
-        reportId: reportId,
-        itemNo: x.item_no,
-        itemCode: x.item_code,
-        itemName: x.item_name,
-        unit: x.unit || null,
-        quantity: x.quantity || 0,
-        unitPrice: x.unit_price || 0,
-        totalAmount: x.total_amount || 0,
-        itemType: x.item_type || null,
-      }));
-
-      await prisma.dailySaleItem.createMany({
-        data: itemsToInsert,
-      });
 
       fileResults.push({
         sheet_name: sheetName,
@@ -554,8 +557,10 @@ export async function POST(req: NextRequest) {
       details: allResults,
     });
   } catch (err: unknown) {
-    const errorMessage = err instanceof Error ? err.message : "Unknown error";
+    const errorMessage = err instanceof Error ? err.message : "Upload processing failed";
+    console.error("Upload Excel Error:", err);
     return NextResponse.json({ error: errorMessage }, { status: 500 });
   }
-}
+});
+
 

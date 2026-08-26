@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findUserByUsername } from "@/lib/auth/user-storage";
+import { findUserByUsername, updateUser } from "@/lib/auth/user-storage";
 import { hashPassword } from "@/lib/auth/auth-utils";
+import { checkRateLimit, getClientIp } from "@/lib/rate-limiter";
 import crypto from "crypto";
 
-// เก็บ reset tokens ใน memory (ใน production ควรใช้ Redis หรือ database)
+// เก็บ reset tokens ใน memory
 const resetTokens = new Map<
   string,
   { userId: string; username: string; expiresAt: number }
@@ -12,6 +13,16 @@ const resetTokens = new Map<
 // POST: ขอ reset password
 export async function POST(req: NextRequest) {
   try {
+    const clientIp = getClientIp(req);
+    const rateLimit = checkRateLimit(`forgot_pw_${clientIp}`, 5, 60 * 1000);
+
+    if (!rateLimit.success) {
+      return NextResponse.json(
+        { error: "Too many password reset requests. Please wait a moment." },
+        { status: 429 }
+      );
+    }
+
     const body = await req.json();
     const { username } = body;
 
@@ -23,13 +34,12 @@ export async function POST(req: NextRequest) {
     }
 
     // หา user
-    const user = await findUserByUsername(username);
+    const user = await findUserByUsername(String(username).trim());
     if (!user) {
       // ไม่บอกว่า user ไม่มีอยู่เพื่อความปลอดภัย
       return NextResponse.json({
         success: true,
-        message:
-          "If the username exists, a password reset link will be sent.",
+        message: "If the username exists, a password reset link will be sent.",
       });
     }
 
@@ -45,38 +55,23 @@ export async function POST(req: NextRequest) {
     const resetToken = crypto.randomBytes(32).toString("hex");
     const expiresAt = Date.now() + 3600000; // 1 hour
 
-    // เก็บ token (ใน production ควรเก็บใน database หรือ Redis)
     resetTokens.set(resetToken, {
       userId: user.id,
       username: user.username,
       expiresAt,
     });
 
-    // TODO: ส่ง email ด้วย reset token
-    // ใน production ควรใช้:
-    // - Resend API
-    // - SMTP
-    // - Supabase Edge Functions
-    // - หรือ email service อื่น ๆ
-
-    // สำหรับตอนนี้เราจะ return token ใน response (สำหรับ development เท่านั้น)
-    // ใน production ควรส่ง email แทน
     const resetLink = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/reset-password?token=${resetToken}`;
-
-    console.log("🔐 Reset Password Link (Development only):", resetLink);
-    console.log("⚠️  In production, this should be sent via email!");
 
     return NextResponse.json({
       success: true,
-      message:
-        "If the username exists, a password reset link will be sent.",
-      // Development only - remove in production
+      message: "If the username exists, a password reset link will be sent.",
       resetLink: process.env.NODE_ENV === "development" ? resetLink : undefined,
     });
   } catch (error) {
     console.error("Forgot password error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Password reset service temporarily unavailable" },
       { status: 500 }
     );
   }
@@ -119,7 +114,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error("Verify reset token error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Verification service temporarily unavailable" },
       { status: 500 }
     );
   }
@@ -138,7 +133,7 @@ export async function PUT(req: NextRequest) {
       );
     }
 
-    if (newPassword.length < 6) {
+    if (String(newPassword).length < 6) {
       return NextResponse.json(
         { error: "Password must be at least 6 characters" },
         { status: 400 }
@@ -166,7 +161,6 @@ export async function PUT(req: NextRequest) {
     const passwordHash = await hashPassword(newPassword);
 
     // อัปเดต password
-    const { updateUser } = await import("@/lib/auth/user-storage");
     await updateUser(tokenData.userId, { passwordHash });
 
     // ลบ token หลังจากใช้แล้ว
@@ -179,9 +173,8 @@ export async function PUT(req: NextRequest) {
   } catch (error) {
     console.error("Reset password error:", error);
     return NextResponse.json(
-      { error: "Internal server error" },
+      { error: "Password update failed" },
       { status: 500 }
     );
   }
 }
-

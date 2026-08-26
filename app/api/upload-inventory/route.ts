@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { requireAuth } from "@/lib/auth/middleware";
 import { parseInventoryFile } from "@/lib/parseInventoryExcel";
 
 // รูปแบบที่รองรับ:
 // - non_moving: ไฟล์ "สินค้าไม่เคลื่อนไหวย้อนหลัง 6 เดือน ..." → เติมทั้งสินค้า + lot + qty/store
-export async function POST(req: NextRequest) {
+export const POST = requireAuth(async (req) => {
   try {
     const formData = await req.formData();
 
@@ -12,7 +13,7 @@ export async function POST(req: NextRequest) {
     const file = formData.get("file") as File | null;
     const files = formData.getAll("files") as File[];
 
-    // รวมไฟล์ทั้งหมด (รองรับทั้งกรณีส่งมาเป็น "file" หรือ "files")
+    // รวมไฟล์ทั้งหมด
     const allFiles: File[] = [];
     if (file) {
       allFiles.push(file);
@@ -42,7 +43,7 @@ export async function POST(req: NextRequest) {
       try {
         const buffer = await currentFile.arrayBuffer();
 
-        // ---------- โหมด non_moving: ไฟล์สินค้าไม่เคลื่อนไหว (สินค้า+lot+qty+store) ----------
+        // โหมด non_moving: ไฟล์สินค้าไม่เคลื่อนไหว (สินค้า+lot+qty+store)
         const parsedResult = await parseInventoryFile(buffer);
         const parsed = parsedResult.records;
 
@@ -75,128 +76,130 @@ export async function POST(req: NextRequest) {
               });
               dateReportId = newDateReport.id;
             }
-          } catch (err: any) {
+          } catch (err) {
             console.error("❌ Exception while handling date_report:", err);
           }
         }
 
         totalRecords += parsed.length;
 
-        // วนลูปบันทึกแต่ละ record
-        for (const rec of parsed) {
-          try {
-            if (!rec.product.product_code || !rec.product.product_code.trim()) {
-              allResults.push({
-                filename: currentFile.name,
-                product_code: "",
-                lot_no: rec.lot_no || "",
-                success: false,
-                error: "Product code is missing or empty",
-              });
-              totalError++;
-              continue;
-            }
+        // บันทึกข้อมูลแบบ Transaction
+        await prisma.$transaction(async (tx) => {
+          for (const rec of parsed) {
+            try {
+              if (!rec.product.product_code || !rec.product.product_code.trim()) {
+                allResults.push({
+                  filename: currentFile.name,
+                  product_code: "",
+                  lot_no: rec.lot_no || "",
+                  success: false,
+                  error: "Product code is missing or empty",
+                });
+                totalError++;
+                continue;
+              }
 
-            if (!rec.lot_no || !rec.lot_no.trim()) {
+              if (!rec.lot_no || !rec.lot_no.trim()) {
+                allResults.push({
+                  filename: currentFile.name,
+                  product_code: rec.product.product_code,
+                  lot_no: rec.lot_no || "",
+                  success: false,
+                  error: "Lot number is missing or empty",
+                });
+                totalError++;
+                continue;
+              }
+
+              const storeLocation = rec.product.store_location || null;
+
+              // ค้นหา product ที่ store_location ตรงกัน
+              const matchedProduct = await tx.product.findFirst({
+                where: {
+                  productCode: rec.product.product_code,
+                  storeLocation: storeLocation,
+                },
+              });
+
+              let productId: string;
+              if (matchedProduct) {
+                await tx.product.update({
+                  where: { id: matchedProduct.id },
+                  data: {
+                    description: rec.product.description || null,
+                    um: rec.product.um || null,
+                    cost: rec.product.cost || null,
+                    itemType: rec.product.item_type || null,
+                    idDate: dateReportId,
+                  },
+                });
+                productId = matchedProduct.id;
+              } else {
+                const newProduct = await tx.product.create({
+                  data: {
+                    productCode: rec.product.product_code,
+                    description: rec.product.description || null,
+                    um: rec.product.um || null,
+                    cost: rec.product.cost || null,
+                    storeLocation: storeLocation,
+                    itemType: rec.product.item_type || null,
+                    idDate: dateReportId,
+                  },
+                });
+                productId = newProduct.id;
+              }
+
+              // จัดการ Lot
+              const expDate = rec.exp ? new Date(rec.exp) : null;
+              const existingLot = await tx.productLot.findUnique({
+                where: {
+                  productId_lotNo: {
+                    productId: productId,
+                    lotNo: rec.lot_no,
+                  },
+                },
+              });
+
+              if (existingLot) {
+                await tx.productLot.update({
+                  where: { id: existingLot.id },
+                  data: {
+                    exp: expDate,
+                    qty: rec.qty || 0,
+                    store: rec.store_location || null,
+                  },
+                });
+              } else {
+                await tx.productLot.create({
+                  data: {
+                    productId: productId,
+                    lotNo: rec.lot_no,
+                    exp: expDate,
+                    qty: rec.qty || 0,
+                    store: rec.store_location || null,
+                  },
+                });
+              }
+
               allResults.push({
                 filename: currentFile.name,
                 product_code: rec.product.product_code,
-                lot_no: rec.lot_no || "",
+                lot_no: rec.lot_no,
+                success: true,
+              });
+              totalSuccess++;
+            } catch (err: any) {
+              allResults.push({
+                filename: currentFile.name,
+                product_code: rec.product.product_code,
+                lot_no: rec.lot_no,
                 success: false,
-                error: "Lot number is missing or empty",
+                error: err.message || "Unknown record error",
               });
               totalError++;
-              continue;
             }
-
-            const storeLocation = rec.product.store_location || null;
-
-            // ค้นหา product ที่ store_location ตรงกัน
-            const matchedProduct = await prisma.product.findFirst({
-              where: {
-                productCode: rec.product.product_code,
-                storeLocation: storeLocation,
-              },
-            });
-
-            let productId: string;
-            if (matchedProduct) {
-              await prisma.product.update({
-                where: { id: matchedProduct.id },
-                data: {
-                  description: rec.product.description || null,
-                  um: rec.product.um || null,
-                  cost: rec.product.cost || null,
-                  itemType: rec.product.item_type || null,
-                  idDate: dateReportId,
-                },
-              });
-              productId = matchedProduct.id;
-            } else {
-              const newProduct = await prisma.product.create({
-                data: {
-                  productCode: rec.product.product_code,
-                  description: rec.product.description || null,
-                  um: rec.product.um || null,
-                  cost: rec.product.cost || null,
-                  storeLocation: storeLocation,
-                  itemType: rec.product.item_type || null,
-                  idDate: dateReportId,
-                },
-              });
-              productId = newProduct.id;
-            }
-
-            // จัดการ Lot
-            const expDate = rec.exp ? new Date(rec.exp) : null;
-            const existingLot = await prisma.productLot.findUnique({
-              where: {
-                productId_lotNo: {
-                  productId: productId,
-                  lotNo: rec.lot_no,
-                },
-              },
-            });
-
-            if (existingLot) {
-              await prisma.productLot.update({
-                where: { id: existingLot.id },
-                data: {
-                  exp: expDate,
-                  qty: rec.qty || 0,
-                  store: rec.store_location || null,
-                },
-              });
-            } else {
-              await prisma.productLot.create({
-                data: {
-                  productId: productId,
-                  lotNo: rec.lot_no,
-                  exp: expDate,
-                  qty: rec.qty || 0,
-                  store: rec.store_location || null,
-                },
-              });
-            }
-
-            allResults.push({
-              filename: currentFile.name,
-              product_code: rec.product.product_code,
-              lot_no: rec.lot_no,
-              success: true,
-            });
-            totalSuccess++;
-          } catch (err: any) {
-            allResults.push({
-              filename: currentFile.name,
-              product_code: rec.product.product_code,
-              lot_no: rec.lot_no,
-              success: false,
-              error: err.message || "Unknown error",
-            });
-            totalError++;
           }
-        }
+        });
       } catch (fileError: any) {
         allResults.push({
           filename: currentFile.name,
@@ -221,8 +224,8 @@ export async function POST(req: NextRequest) {
   } catch (error: any) {
     console.error("Upload inventory error:", error);
     return NextResponse.json(
-      { error: error.message || "Internal server error" },
+      { error: "Upload inventory processing failed" },
       { status: 500 },
     );
   }
-}
+});
