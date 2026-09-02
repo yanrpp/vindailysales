@@ -140,3 +140,106 @@ model ProductStockRecord {
   @@index([reportDate])
   @@map("product_stock_records")
 }
+
+// 8. Import Batch (ประวัติการนำเข้าไฟล์รายงาน)
+model ImportBatch {
+  id           String              @id @default(uuid())
+  fileType     String              @map("file_type") // "BALANCE" | "DISPENSE" | "SALE" | "USAGE"
+  fileName     String              @map("file_name")
+  totalRows    Int                 @default(0) @map("total_rows")
+  importedRows Int                 @default(0) @map("imported_rows")
+  fileSize     Int?                @map("file_size")
+  uploadedBy   String?             @map("uploaded_by")
+  note         String?
+  createdAt    DateTime            @default(now()) @map("created_at")
+  balances     InventoryBalance[]
+  dispenses    InventoryDispense[]
+  sales        InventorySale[]
+  usages       InventoryUsage[]
+
+  @@index([fileType, createdAt])
+  @@map("import_batches")
+}
+
+// 9. Inventory Balance (ข้อมูลคงเหลือจากไฟล์ 1.คงเหลือ.xls)
+model InventoryBalance {
+  id          String       @id @default(uuid())
+  batchId     String       @map("batch_id")
+  batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
+  itemName    String?      @map("item_name") // Col C
+  unit        String?      // Col D
+  balanceQty  Float?       @map("balance_qty") // Col E (จำนวน)
+  minQty      Float?       @map("min_qty") // Col H (Min/ความปลอดภัย)
+  unitPrice   Float?       @map("unit_price") // Col F
+  totalCost   Float?       @map("total_cost") // Col G
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([itemCode])
+  @@index([batchId])
+  @@map("inventory_balances")
+}
+
+// 10. Inventory Dispense (ข้อมูลตัดจ่ายจากไฟล์ 2.ตัดจ่าย.xls)
+model InventoryDispense {
+  id          String       @id @default(uuid())
+  batchId     String       @map("batch_id")
+  batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
+  itemName    String?      @map("item_name") // Col C
+  unit        String?      // Col F
+  rawQty      Float        @map("raw_qty") // Col G ดั้งเดิม
+  adjustedQty Float        @map("adjusted_qty") // คำนวณ (G/3)+G
+  unitPrice   Float?       @map("unit_price") // Col H
+  totalCost   Float?       @map("total_cost") // Col I
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([itemCode])
+  @@index([batchId])
+  @@map("inventory_dispenses")
+}
+
+// 11. Inventory Sale (ข้อมูลยอดขายจากไฟล์ 3.ขาย.xls)
+model InventorySale {
+  id          String       @id @default(uuid())
+  batchId     String       @map("batch_id")
+  batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
+  itemName    String?      @map("item_name") // Col C
+  unit        String?      // Col F
+  rawQty      Float?       @map("raw_qty") // Col E ดั้งเดิม
+  adjustedQty Float?       @map("adjusted_qty") // คำนวณ (E/3)+E
+  saleAmount  Float?       @map("sale_amount") // Col G
+  costAmount  Float?       @map("cost_amount") // Col H
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([itemCode])
+  @@index([batchId])
+  @@map("inventory_sales")
+}
+
+// 12. Inventory Usage & Vendor (ข้อมูลปริมาณการใช้ย้อนหลัง หมวด และบริษัท จากไฟล์ 4.ปริมาณการใช้.xls)
+model InventoryUsage {
+  id          String       @id @default(uuid())
+  batchId     String       @map("batch_id")
+  batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
+  itemName    String?      @map("item_name") // Col C
+  unit        String?      // Col D
+  usageMonth1 Float?       @map("usage_month_1") // ปริมาณการใช้ 6
+  usageMonth2 Float?       @map("usage_month_2") // ปริมาณการใช้ 7
+  usageMonth3 Float?       @map("usage_month_3") // ปริมาณการใช้ 8
+  category    String?      // หมวด
+  supplier    String?      // บริษัทคู่ค้า
+  createdAt   DateTime     @default(now()) @map("created_at")
+  updatedAt   DateTime     @updatedAt @map("updated_at")
+
+  @@index([itemCode])
+  @@index([category])
+  @@index([supplier])
+  @@index([batchId])
+  @@map("inventory_usages")
+}

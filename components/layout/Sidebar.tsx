@@ -31,6 +31,13 @@ const menuItems: MenuItem[] = [
     icon: <BarChart3 className="h-5 w-5" />,
     requireAuth: false, // Dashboard แสดงได้โดยไม่ต้อง login
   },
+  // Master Inventory Analytics Section
+  {
+    href: "/inventory-master",
+    label: "นำเข้าและวิเคราะห์รายงาน",
+    icon: <UploadCloud className="h-5 w-5" />,
+    requireAuth: false,
+  },
   // Drug Data Section
   {
     href: "/maxmin",
