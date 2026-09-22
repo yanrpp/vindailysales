@@ -243,3 +243,15 @@ model InventoryUsage {
   @@index([batchId])
   @@map("inventory_usages")
 }
+
+// 13. Inventory Pending Delivery (ยอดสินค้าค้างส่ง ที่ผู้ใช้กรอกเพิ่มเติม)
+model InventoryPendingDelivery {
+  id        String   @id @default(uuid())
+  itemCode  String   @unique @map("item_code")
+  qty       Float    @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([itemCode])
+  @@map("inventory_pending_deliveries")
+}

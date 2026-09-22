@@ -842,6 +842,34 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
       supplier = row[16] !== undefined && row[16] !== null ? fixThaiEncoding(row[16]) : (row[8] ? fixThaiEncoding(row[8]) : null);
     }
 
+    // ตรวจจับชื่อบริษัท: ถ้าค่าใน category เป็นชื่อบริษัท (เช่น มีคำว่า บริษัท, หจก, จำกัด) ให้ย้ายไป supplier
+    const isCompany = (val: string | null) =>
+      val && (
+        val.includes("บริษัท") ||
+        val.includes("หจก") ||
+        val.includes("บจก") ||
+        val.includes("จำกัด") ||
+        val.includes("มหาชน") ||
+        val.includes("ห้างหุ้นส่วน") ||
+        /^[A-Z0-9]{2,}\s{2,}/.test(val.trim())
+      );
+
+    if (isCompany(category) && (!supplier || supplier === "-")) {
+      supplier = category;
+      category = null;
+    }
+
+    // ถ้ายังไม่มีหมวดหมู่ ให้ค้นหาจากแพทเทิร์นรหัสและชื่อสินค้า
+    if (!category) {
+      if (colB.startsWith("XA")) category = "เวชภัณฑ์ 1.";
+      else if (/^[0-9]{4}/.test(colB) || /^[A-Z]{2}[0-9]{2}/.test(colB)) category = "ยา";
+      else if (colB.startsWith("1-") || colB.startsWith("2-")) category = "วัสดุเครื่องเขียน";
+      else if (colB.startsWith("9-") || colB.startsWith("SET-")) category = "เครื่องใช้สำหรับผู้ป่วย";
+      else if (colB.startsWith("3-")) category = "วัสดุสิ้นเปลืองทั่วไป";
+      else if (colB.startsWith("10-")) category = "พัสดุ";
+      else category = "เวชภัณฑ์/ยา";
+    }
+
     const val1 = m1 !== null && !isNaN(m1) ? m1 : 0;
     const val2 = m2 !== null && !isNaN(m2) ? m2 : 0;
     const val3 = m3 !== null && !isNaN(m3) ? m3 : 0;

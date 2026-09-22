@@ -9,13 +9,17 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get("search")?.trim() || "";
     const selectedCategory = searchParams.get("category")?.trim() || "";
     const selectedSupplier = searchParams.get("supplier")?.trim() || "";
+    const selectedUnit = searchParams.get("unit")?.trim() || "";
     const stockStatus = searchParams.get("stockStatus")?.trim() || "ALL"; // "ALL" | "NEED_ORDER" | "SUFFICIENT"
     const sortBy = searchParams.get("sortBy")?.trim() || "seq";
     const sortOrder = searchParams.get("sortOrder")?.toLowerCase() === "desc" ? "desc" : "asc";
 
+    const isAll = searchParams.get("all") === "true";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
-    const limit = Math.max(10, Math.min(200, parseInt(searchParams.get("limit") || "50")));
-    const skip = (page - 1) * limit;
+    const limit = isAll
+      ? undefined
+      : Math.max(10, Math.min(200, parseInt(searchParams.get("limit") || "50")));
+    const skip = limit !== undefined ? (page - 1) * limit : undefined;
 
     // 1. Tab Batches
     if (tab === "batches") {
@@ -28,7 +32,7 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         batches,
-        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
@@ -58,7 +62,7 @@ export async function GET(req: NextRequest) {
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
-        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
@@ -88,7 +92,7 @@ export async function GET(req: NextRequest) {
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
-        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
@@ -118,7 +122,7 @@ export async function GET(req: NextRequest) {
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
-        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
@@ -152,12 +156,12 @@ export async function GET(req: NextRequest) {
           category: item.category ? fixThaiEncoding(item.category) : null,
           supplier: item.supplier ? fixThaiEncoding(item.supplier) : null,
         })),
-        pagination: { total, page, limit, totalPages: Math.ceil(total / limit) },
+        pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
-    // 6. Master Overview: รวมข้อมูล 4 ส่วนตามโครงสร้าง Sheet "เหลือ"
-    const [balances, dispenses, sales, usages] = await Promise.all([
+    // 6. Master Overview: รวมข้อมูล 4 ส่วนตามโครงสร้าง Sheet "เหลือ" + ยอดค้างส่ง
+    const [balances, dispenses, sales, usages, pendingList] = await Promise.all([
       prisma.inventoryBalance.findMany({
         select: {
           itemCode: true,
@@ -203,17 +207,74 @@ export async function GET(req: NextRequest) {
           supplier: true,
         },
       }),
+      (prisma as any).inventoryPendingDelivery.findMany({
+        select: {
+          itemCode: true,
+          qty: true,
+        },
+      }),
     ]);
 
+    const pendingMap = new Map<string, number>();
+    (pendingList as any[]).forEach((p) => {
+      pendingMap.set(p.itemCode.trim(), p.qty);
+    });
+
     const itemMap = new Map<string, any>();
+
+function inferCategoryByCode(code: string, itemName?: string | null): string {
+  const c = code.trim();
+  const name = itemName ? itemName.toLowerCase() : "";
+
+  if (c.startsWith("XA")) {
+    if (name.includes("glove") || name.includes("ถุงมือ")) return "เวชภัณฑ์ 1. (ถุงมือ)";
+    if (name.includes("syringe") || name.includes("เข็ม")) return "เวชภัณฑ์ 1. (กระบอกฉีดยา/เข็ม)";
+    if (name.includes("tube") || name.includes("สาย")) return "เวชภัณฑ์ 1. (สายยาง/ท่อ)";
+    return "เวชภัณฑ์ 1.";
+  }
+  if (/^[0-9]{4}/.test(c) || /^[A-Z]{2}[0-9]{2}/.test(c)) {
+    if (name.includes("syrup") || name.includes("drop") || name.includes("elixir") || name.includes("suspension")) return "ยาน้ำ";
+    if (name.includes("tablet") || name.includes("cap") || name.includes("เม็ด")) return "ยาเม็ด";
+    if (name.includes("inj") || name.includes("iv") || name.includes("ฉีด")) return "ยาฉีด";
+    if (name.includes("cream") || name.includes("gel") || name.includes("ointment")) return "ยาครีม/ภายนอก";
+    return "ยา";
+  }
+  if (c.startsWith("1-") || c.startsWith("2-")) return "วัสดุเครื่องเขียน";
+  if (c.startsWith("9-") || c.startsWith("SET-")) return "เครื่องใช้สำหรับผู้ป่วย";
+  if (c.startsWith("3-")) return "วัสดุสิ้นเปลืองทั่วไป";
+  if (c.startsWith("10-")) return "พัสดุ";
+  if (c.startsWith("AS-")) return "เครื่องมือและอุปกรณ์การแพทย์";
+  if (c.startsWith("OT-") || c.startsWith("IS-")) return "เวชภัณฑ์ 1.";
+
+  return "เวชภัณฑ์/ยา";
+}
+
+    const isCompany = (val: string | null) =>
+      val && (
+        val.includes("บริษัท") ||
+        val.includes("หจก") ||
+        val.includes("บจก") ||
+        val.includes("จำกัด") ||
+        val.includes("มหาชน") ||
+        val.includes("ห้างหุ้นส่วน") ||
+        /^[A-Z0-9]{2,}\s{2,}/.test(val.trim())
+      );
 
     // Step A: เติม Usage & Category & Supplier จากไฟล์ 4 ก่อน
     usages.forEach((u) => {
       const key = fixThaiEncoding(u.itemCode).trim();
       const fixedName = u.itemName ? fixThaiEncoding(u.itemName) : null;
       const fixedUnit = u.unit ? fixThaiEncoding(u.unit) : null;
-      const fixedCat = u.category ? fixThaiEncoding(u.category) : null;
-      const fixedSup = u.supplier ? fixThaiEncoding(u.supplier) : null;
+      let fixedCat = u.category ? fixThaiEncoding(u.category) : null;
+      let fixedSup = u.supplier ? fixThaiEncoding(u.supplier) : null;
+
+      if (isCompany(fixedCat) && (!fixedSup || fixedSup === "-")) {
+        fixedSup = fixedCat;
+        fixedCat = null;
+      }
+      if (!fixedCat) {
+        fixedCat = inferCategoryByCode(key, fixedName);
+      }
 
       itemMap.set(key, {
         itemCode: key,
@@ -230,7 +291,7 @@ export async function GET(req: NextRequest) {
         saleAdjustedQty: 0,
         pendingDelivery: 0,
         category: fixedCat,
-        supplier: fixedSup,
+        supplier: fixedSup || "-",
       });
     });
 
@@ -255,11 +316,12 @@ export async function GET(req: NextRequest) {
           saleRawQty: 0,
           saleAdjustedQty: 0,
           pendingDelivery: 0,
-          category: null,
-          supplier: null,
+          category: inferCategoryByCode(key, fixedName),
+          supplier: "-",
         });
       } else {
         const curr = itemMap.get(key);
+        if (!curr.category || curr.category === "-") curr.category = inferCategoryByCode(key, fixedName || curr.itemName);
         curr.balanceQty = (curr.balanceQty || 0) + (b.balanceQty || 0);
         curr.minQty = b.minQty || curr.minQty;
         if (!curr.itemName && fixedName) curr.itemName = fixedName;
@@ -288,11 +350,12 @@ export async function GET(req: NextRequest) {
           saleRawQty: 0,
           saleAdjustedQty: 0,
           pendingDelivery: 0,
-          category: null,
-          supplier: null,
+          category: inferCategoryByCode(key, fixedName),
+          supplier: "-",
         });
       } else {
         const curr = itemMap.get(key);
+        if (!curr.category || curr.category === "-") curr.category = inferCategoryByCode(key, fixedName || curr.itemName);
         curr.dispenseRawQty = (curr.dispenseRawQty || 0) + d.rawQty;
         curr.dispenseAdjustedQty = (curr.dispenseAdjustedQty || 0) + d.adjustedQty;
         if (!curr.itemName && fixedName) curr.itemName = fixedName;
@@ -321,11 +384,12 @@ export async function GET(req: NextRequest) {
           saleRawQty: s.rawQty || 0,
           saleAdjustedQty: s.adjustedQty || 0,
           pendingDelivery: 0,
-          category: null,
-          supplier: null,
+          category: inferCategoryByCode(key, fixedName),
+          supplier: "-",
         });
       } else {
         const curr = itemMap.get(key);
+        if (!curr.category || curr.category === "-") curr.category = inferCategoryByCode(key, fixedName || curr.itemName);
         curr.saleRawQty = (curr.saleRawQty || 0) + (s.rawQty || 0);
         curr.saleAdjustedQty = (curr.saleAdjustedQty || 0) + (s.adjustedQty || 0);
         if (!curr.itemName && fixedName) curr.itemName = fixedName;
@@ -336,10 +400,12 @@ export async function GET(req: NextRequest) {
     // Step E: คำนวณสูตร MAX, AVG, เหลือ-MAX, สั่งซื้อ ตาม Sheet เหลือ
     const categorySet = new Set<string>();
     const supplierSet = new Set<string>();
+    const unitSet = new Set<string>();
 
     let allItems = Array.from(itemMap.values()).map((item, index) => {
       if (item.category) categorySet.add(item.category);
       if (item.supplier) supplierSet.add(item.supplier);
+      if (item.unit && item.unit !== "-") unitSet.add(item.unit);
 
       // ถ้าไม่มี usageMonth3 ในไฟล์ 4 ให้นำ (ตัดจ่ายปรับปรุง + ขายปรับปรุง) มาใช้เป็นปริมาณการใช้เดือนล่าสุด
       const currentPeriodUsage = (item.dispenseAdjustedQty || 0) + (item.saleAdjustedQty || 0);
@@ -355,7 +421,10 @@ export async function GET(req: NextRequest) {
       const balance = item.balanceQty !== null && item.balanceQty !== undefined ? item.balanceQty : 0;
       const diff = Number((balance - maxUsage).toFixed(2)); // เหลือ - MAX
       const needOrder = diff < 0;
-      const suggestedOrder = needOrder ? Math.ceil(Math.abs(diff)) : 0;
+
+      const pendingDelivery = pendingMap.get(item.itemCode) || 0;
+      const rawNeeded = needOrder ? Math.abs(diff) : 0;
+      const suggestedOrder = Math.max(0, Math.ceil(rawNeeded - pendingDelivery));
 
       return {
         seq: index + 1,
@@ -373,7 +442,7 @@ export async function GET(req: NextRequest) {
         avgUsage,
         diff, // เหลือ - MAX
         needOrder,
-        pendingDelivery: item.pendingDelivery || 0,
+        pendingDelivery,
         suggestedOrder,
         category: item.category || "-",
         supplier: item.supplier || "-",
@@ -398,6 +467,10 @@ export async function GET(req: NextRequest) {
 
     if (selectedSupplier && selectedSupplier !== "ALL") {
       allItems = allItems.filter((item) => item.supplier === selectedSupplier);
+    }
+
+    if (selectedUnit && selectedUnit !== "ALL") {
+      allItems = allItems.filter((item) => item.unit === selectedUnit);
     }
 
     if (stockStatus === "NEED_ORDER") {
@@ -438,7 +511,7 @@ export async function GET(req: NextRequest) {
     allItems = allItems.map((item, idx) => ({ ...item, seq: idx + 1 }));
 
     const total = allItems.length;
-    const paginatedItems = allItems.slice(skip, skip + limit);
+    const paginatedItems = limit !== undefined ? allItems.slice(skip || 0, (skip || 0) + limit) : allItems;
 
     const needOrderCount = allItems.filter((i) => i.needOrder).length;
     const sufficientCount = allItems.filter((i) => !i.needOrder && i.balanceQty !== null).length;
@@ -457,12 +530,13 @@ export async function GET(req: NextRequest) {
       filterOptions: {
         categories: Array.from(categorySet).sort(),
         suppliers: Array.from(supplierSet).sort(),
+        units: Array.from(unitSet).sort(),
       },
       pagination: {
         total,
         page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        limit: limit ?? total,
+        totalPages: limit ? Math.ceil(total / limit) : 1,
       },
     });
   } catch (error: any) {

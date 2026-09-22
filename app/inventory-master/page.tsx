@@ -96,6 +96,7 @@ export default function InventoryMasterPage() {
 
   // Data views state
   const [loadingData, setLoadingData] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
   const [tableData, setTableData] = useState<any[]>([]);
   const [metrics, setMetrics] = useState<any>({
     totalUniqueCodes: 0,
@@ -106,15 +107,17 @@ export default function InventoryMasterPage() {
     needOrderCount: 0,
     sufficientCount: 0,
   });
-  const [filterOptions, setFilterOptions] = useState<{ categories: string[]; suppliers: string[] }>({
+  const [filterOptions, setFilterOptions] = useState<{ categories: string[]; suppliers: string[]; units?: string[] }>({
     categories: [],
     suppliers: [],
+    units: [],
   });
 
   // Filter state
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("ALL");
   const [selectedSupplier, setSelectedSupplier] = useState("ALL");
+  const [selectedUnit, setSelectedUnit] = useState("ALL");
   const [stockStatus, setStockStatus] = useState<"ALL" | "NEED_ORDER" | "SUFFICIENT">("ALL");
 
   const [currentPage, setCurrentPage] = useState(1);
@@ -129,7 +132,7 @@ export default function InventoryMasterPage() {
     if (activeTab !== "upload") {
       fetchTabData();
     }
-  }, [activeTab, currentPage, searchTerm, selectedCategory, selectedSupplier, stockStatus, sortBy, sortOrder]);
+  }, [activeTab, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, sortBy, sortOrder]);
 
   const fetchTabData = async () => {
     setLoadingData(true);
@@ -139,6 +142,7 @@ export default function InventoryMasterPage() {
         search: searchTerm,
         category: selectedCategory,
         supplier: selectedSupplier,
+        unit: selectedUnit,
         stockStatus,
         sortBy,
         sortOrder,
@@ -369,40 +373,109 @@ export default function InventoryMasterPage() {
     }
   };
 
-  // Export to Excel in exact Sheet "เหลือ" format
-  const handleExportExcel = () => {
-    if (tableData.length === 0) return;
+  // Handle inline change for pending delivery (ค้างส่ง)
+  const handlePendingDeliveryChange = (itemCode: string, value: string) => {
+    const numericVal = value === "" ? 0 : Math.max(0, parseFloat(value) || 0);
 
-    if (activeTab === "overview") {
-      const exportRows = tableData.map((item, idx) => ({
-        "ลำดับ": idx + 1,
-        "รหัสสินค้า": item.itemCode,
-        "รายการ": item.itemName,
-        "หน่วย": item.unit,
-        "เหลือ (Col E)": item.balanceQty ?? "-",
-        "MIN (Col H)": item.minQty ?? "-",
-        "ปริมาณการใช้ 6": item.usageMonth1 ?? "-",
-        "ปริมาณการใช้ 7": item.usageMonth2 ?? "-",
-        "ปริมาณการใช้ 8": item.usageMonth3 ?? "-",
-        "MAX (G,H,I)": item.maxUsage ?? 0,
-        "AVG (G,H,I)": item.avgUsage ?? 0,
-        "เหลือ - MAX": item.diff ?? 0,
-        "ค้างส่ง": item.pendingDelivery ?? 0,
-        "สั่ง (แนะนำ)": item.suggestedOrder ?? 0,
-        "หน่วยนับ": item.unit,
-        "หมวด": item.category,
-        "บริษัท": item.supplier,
-      }));
+    setTableData((prev) =>
+      prev.map((row) => {
+        if (row.itemCode === itemCode) {
+          const rawNeeded = row.diff < 0 ? Math.abs(row.diff) : 0;
+          const newSuggested = Math.max(0, Math.ceil(rawNeeded - numericVal));
+          return {
+            ...row,
+            pendingDelivery: numericVal,
+            suggestedOrder: newSuggested,
+          };
+        }
+        return row;
+      })
+    );
+  };
 
-      const ws = xlsx.utils.json_to_sheet(exportRows);
-      const wb = xlsx.utils.book_new();
-      xlsx.utils.book_append_sheet(wb, ws, "เหลือ");
-      xlsx.writeFile(wb, `รายงานวิเคราะห์สต็อก_เหลือ_MAX_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    } else {
-      const ws = xlsx.utils.json_to_sheet(tableData);
-      const wb = xlsx.utils.book_new();
-      xlsx.utils.book_append_sheet(wb, ws, activeTab);
-      xlsx.writeFile(wb, `inventory_${activeTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+  // Handle save pending delivery to DB on blur or Enter
+  const handlePendingDeliveryBlur = async (itemCode: string, qty: number) => {
+    try {
+      await fetch("/api/inventory-analytics/pending-delivery", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ itemCode, qty }),
+      });
+    } catch (error) {
+      console.error("Error saving pending delivery to DB:", error);
+    }
+  };
+
+  // Export to Excel in exact Sheet "เหลือ" format (ดึงข้อมูลทั้งหมดตามเงื่อนไขตัวกรอง)
+  const handleExportExcel = async () => {
+    if (totalCount === 0 && tableData.length === 0) {
+      alert("ไม่มีข้อมูลที่จะส่งออก");
+      return;
+    }
+
+    setIsExporting(true);
+    try {
+      // ดึงข้อมูลทั้งหมดตามตัวกรองที่เลือกอยู่ (all=true)
+      const queryParams = new URLSearchParams({
+        tab: activeTab,
+        search: searchTerm,
+        category: selectedCategory,
+        supplier: selectedSupplier,
+        unit: selectedUnit,
+        stockStatus,
+        sortBy,
+        sortOrder,
+        all: "true",
+      });
+
+      const res = await fetch(`/api/inventory-analytics/overview?${queryParams.toString()}`);
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "ไม่สามารถดึงข้อมูลสำหรับส่งออกได้");
+      }
+
+      const allItems: any[] = activeTab === "batches" ? (data.batches || []) : (data.items || []);
+      if (allItems.length === 0) {
+        alert("ไม่มีข้อมูลที่จะส่งออก");
+        return;
+      }
+
+      if (activeTab === "overview") {
+        const exportRows = allItems.map((item, idx) => ({
+          "ลำดับ": idx + 1,
+          "รหัสสินค้า": item.itemCode,
+          "รายการ": item.itemName,
+          "หน่วย": item.unit,
+          "เหลือ (Col E)": item.balanceQty ?? "-",
+          "MIN (Col H)": item.minQty ?? "-",
+          "ปริมาณการใช้ ย้อนหลัง 2 เดือน": item.usageMonth1 ?? "-",
+          "ปริมาณการใช้ ย้อนหลัง 1 เดือน": item.usageMonth2 ?? "-",
+          "ปริมาณการใช้ เดือนนี้ (ตัด+ขาย)": item.usageMonth3 ?? "-",
+          "MAX": item.maxUsage ?? 0,
+          "AVG": item.avgUsage ?? 0,
+          "เหลือ - MAX": item.diff ?? 0,
+          "สถานะ": item.diff < 0 ? "ต้องสั่งซื้อ" : "พอใช้",
+          "ค้างส่ง": item.pendingDelivery ?? 0,
+          "สั่ง (แนะนำ)": item.suggestedOrder ?? 0,
+          "หมวด": item.category,
+          "บริษัท": item.supplier,
+        }));
+
+        const ws = xlsx.utils.json_to_sheet(exportRows);
+        const wb = xlsx.utils.book_new();
+        xlsx.utils.book_append_sheet(wb, ws, "เหลือ");
+        xlsx.writeFile(wb, `รายงานวิเคราะห์สต็อก_เหลือ_MAX_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      } else {
+        const ws = xlsx.utils.json_to_sheet(allItems);
+        const wb = xlsx.utils.book_new();
+        xlsx.utils.book_append_sheet(wb, ws, activeTab);
+        xlsx.writeFile(wb, `inventory_${activeTab}_${new Date().toISOString().slice(0, 10)}.xlsx`);
+      }
+    } catch (err: any) {
+      console.error("Export error:", err);
+      alert("เกิดข้อผิดพลาดในการส่งออกข้อมูล: " + err.message);
+    } finally {
+      setIsExporting(false);
     }
   };
 
@@ -584,7 +657,7 @@ export default function InventoryMasterPage() {
           {/* Search, Status & Dropdown Filter Bar */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
             {/* Search */}
-            <div className="relative lg:col-span-4">
+            <div className="relative lg:col-span-3">
               <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
               <input
                 type="text"
@@ -606,7 +679,7 @@ export default function InventoryMasterPage() {
                   setSelectedCategory(e.target.value);
                   setCurrentPage(1);
                 }}
-                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-xs md:text-sm focus:border-blue-500 focus:outline-none bg-white"
+                className="w-full rounded-xl border border-gray-300 px-3 py-2 text-xs md:text-sm focus:border-blue-500 focus:outline-none bg-white truncate"
               >
                 <option value="ALL">📁 ทุกหมวดสินค้า ({filterOptions.categories.length})</option>
                 {filterOptions.categories.map((c) => (
@@ -636,6 +709,30 @@ export default function InventoryMasterPage() {
               </select>
             </div>
 
+            {/* Unit Dropdown */}
+            <div className="lg:col-span-1">
+              <select
+                value={selectedUnit}
+                onChange={(e) => {
+                  setSelectedUnit(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className={`w-full rounded-xl border px-2 py-2 text-xs md:text-sm focus:outline-none truncate transition-colors ${
+                  selectedUnit !== "ALL"
+                    ? "border-blue-500 bg-blue-50 text-blue-800 font-semibold"
+                    : "border-gray-300 bg-white"
+                }`}
+                title="กรองตามหน่วยสินค้า"
+              >
+                <option value="ALL">📦 ทุกหน่วย ({filterOptions.units?.length || 0})</option>
+                {(filterOptions.units || []).map((u) => (
+                  <option key={u} value={u}>
+                    {u}
+                  </option>
+                ))}
+              </select>
+            </div>
+
             {/* Status & Export Actions */}
             <div className="lg:col-span-2 flex items-center justify-end gap-2">
               <button
@@ -647,10 +744,20 @@ export default function InventoryMasterPage() {
               </button>
               <button
                 onClick={handleExportExcel}
-                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap"
+                disabled={isExporting || (totalCount === 0 && tableData.length === 0)}
+                className="flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors shadow-sm whitespace-nowrap"
+                title={`ส่งออกข้อมูลทั้งหมด (${formatNum(totalCount || tableData.length)} รายการ)`}
               >
-                <Download className="h-3.5 w-3.5" />
-                <span>Export Sheet เหลือ</span>
+                {isExporting ? (
+                  <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Download className="h-3.5 w-3.5" />
+                )}
+                <span>
+                  {isExporting
+                    ? "กำลังส่งออก..."
+                    : `Export Sheet เหลือ (${formatNum(totalCount || tableData.length)})`}
+                </span>
               </button>
             </div>
           </div>
@@ -740,13 +847,40 @@ export default function InventoryMasterPage() {
 
                     {/* Unit */}
                     <th
-                      onClick={() => handleSort("unit")}
-                      className="group px-2 py-3 cursor-pointer hover:bg-slate-700 transition-colors select-none"
-                      title="คลิกเพื่อเรียงตามหน่วย"
+                      className={`group px-2 py-2.5 transition-colors select-none ${
+                        selectedUnit !== "ALL" ? "bg-indigo-950/90 text-amber-200" : "hover:bg-slate-700"
+                      }`}
                     >
-                      <div className="flex items-center justify-between gap-1">
-                        <span>หน่วย</span>
-                        {renderSortIcon("unit")}
+                      <div className="flex flex-col gap-1">
+                        <div
+                          onClick={() => handleSort("unit")}
+                          className="flex items-center justify-between gap-1 cursor-pointer"
+                          title="คลิกเพื่อเรียงตามหน่วย"
+                        >
+                          <span className="font-medium text-xs">หน่วย</span>
+                          {renderSortIcon("unit")}
+                        </div>
+                        <select
+                          value={selectedUnit}
+                          onChange={(e) => {
+                            setSelectedUnit(e.target.value);
+                            setCurrentPage(1);
+                          }}
+                          onClick={(e) => e.stopPropagation()}
+                          className={`text-[11px] rounded px-1 py-0.5 border focus:outline-none cursor-pointer w-full transition-colors ${
+                            selectedUnit !== "ALL"
+                              ? "bg-amber-400 text-slate-950 font-bold border-amber-300"
+                              : "bg-slate-700 hover:bg-slate-600 text-slate-200 border-slate-600"
+                          }`}
+                          title="เลือกกรองหน่วยสินค้า"
+                        >
+                          <option value="ALL">ทั้งหมด</option>
+                          {(filterOptions.units || []).map((u) => (
+                            <option key={u} value={u} className="bg-white text-gray-800">
+                              {u}
+                            </option>
+                          ))}
+                        </select>
                       </div>
                     </th>
 
@@ -784,12 +918,11 @@ export default function InventoryMasterPage() {
                     <th
                       onClick={() => handleSort("usageMonth1")}
                       className="group px-3 py-3 text-right bg-slate-700 text-slate-200 cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                      title="คลิกเพื่อเรียงตามยอดใช้เดือน 6"
+                      title="คลิกเพื่อเรียงตามยอดใช้ยอดหลัง 2 เดือน"
                     >
                       <div className="flex items-center justify-end gap-1">
                         <div>
-                          <div>ใช้ 6</div>
-                          <span className="text-[9px] text-slate-300 font-normal">เดือน 6</span>
+                          <div>ย้อนหลัง 2 เดือน</div>
                         </div>
                         {renderSortIcon("usageMonth1")}
                       </div>
@@ -799,12 +932,11 @@ export default function InventoryMasterPage() {
                     <th
                       onClick={() => handleSort("usageMonth2")}
                       className="group px-3 py-3 text-right bg-slate-700 text-slate-200 cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                      title="คลิกเพื่อเรียงตามยอดใช้เดือน 7"
+                      title="คลิกเพื่อเรียงตามยอดใช้ย้อนหลัง 1 เดือน"
                     >
                       <div className="flex items-center justify-end gap-1">
                         <div>
-                          <div>ใช้ 7</div>
-                          <span className="text-[9px] text-slate-300 font-normal">เดือน 7</span>
+                          <div>ย้อนหลัง 1 เดือน</div>
                         </div>
                         {renderSortIcon("usageMonth2")}
                       </div>
@@ -814,12 +946,11 @@ export default function InventoryMasterPage() {
                     <th
                       onClick={() => handleSort("usageMonth3")}
                       className="group px-3 py-3 text-right bg-slate-700 text-slate-200 cursor-pointer hover:bg-slate-600 transition-colors select-none"
-                      title="คลิกเพื่อเรียงตามยอดใช้เดือน 8 (ตัด+ขาย)"
+                      title="คลิกเพื่อเรียงตามยอดใช้เดือนนี้ (ตัด+ขาย)"
                     >
                       <div className="flex items-center justify-end gap-1">
                         <div>
-                          <div>ใช้ 8</div>
-                          <span className="text-[9px] text-slate-300 font-normal">ตัด+ขาย</span>
+                          <div>เดือนนี้ (ตัด+ขาย)</div>
                         </div>
                         {renderSortIcon("usageMonth3")}
                       </div>
@@ -873,11 +1004,14 @@ export default function InventoryMasterPage() {
                     {/* Pending */}
                     <th
                       onClick={() => handleSort("pendingDelivery")}
-                      className="group px-2.5 py-3 text-right cursor-pointer hover:bg-slate-700 transition-colors select-none"
-                      title="คลิกเพื่อเรียงตามยอดค้างส่ง"
+                      className="group px-2.5 py-3 text-right bg-slate-700 text-slate-200 cursor-pointer hover:bg-slate-600 transition-colors select-none min-w-[95px]"
+                      title="คลิกเพื่อเรียงตามยอดค้างส่ง (สามารถพิมพ์กรอกข้อมูลได้โดยตรงในตาราง)"
                     >
                       <div className="flex items-center justify-end gap-1">
-                        <span>ค้างส่ง</span>
+                        <div>
+                          <div>ค้างส่ง ✍️</div>
+                          <span className="text-[9px] text-amber-300 font-normal">กรอกได้</span>
+                        </div>
                         {renderSortIcon("pendingDelivery")}
                       </div>
                     </th>
@@ -998,8 +1132,27 @@ export default function InventoryMasterPage() {
                         </td>
 
                         {/* Orders */}
-                        <td className="px-2.5 py-2 text-right font-mono text-gray-400">
-                          {formatNum(item.pendingDelivery)}
+                        <td className="px-1.5 py-1 text-right">
+                          <input
+                            type="number"
+                            min="0"
+                            step="any"
+                            value={item.pendingDelivery === 0 ? "" : item.pendingDelivery}
+                            placeholder="0"
+                            onChange={(e) => handlePendingDeliveryChange(item.itemCode, e.target.value)}
+                            onBlur={(e) => handlePendingDeliveryBlur(item.itemCode, Number(e.target.value) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                (e.target as HTMLInputElement).blur();
+                              }
+                            }}
+                            className={`w-16 rounded border px-1.5 py-1 text-right text-xs font-mono transition-all focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                              item.pendingDelivery > 0
+                                ? "bg-amber-50 border-amber-400 font-bold text-amber-950"
+                                : "bg-white border-gray-300 text-gray-700 hover:border-gray-400"
+                            }`}
+                            title="พิมพ์กรอกยอดค้างส่ง (ระบบจะบันทึกและคำนวณยอดสั่งซื้อให้อัตโนมัติ)"
+                          />
                         </td>
                         <td className="px-2.5 py-2 text-right font-mono font-bold text-red-700 bg-red-50/40">
                           {item.suggestedOrder > 0 ? formatNum(item.suggestedOrder) : "-"}
@@ -1215,7 +1368,7 @@ export default function InventoryMasterPage() {
 
                 <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
                   <p>• <b>เดือน 6, 7, 8</b>: ยอดใช้ 3 เดือน</p>
-                  <p>• <b>หมวดสินค้า</b> & <b>บริษัทคู่ค้า</b></p>
+                  <p>• <b>หมวดสินค้า</b> & <b>บริษัทคู่ค้า.</b></p>
                   <p className="text-amber-800 font-bold">➔ ผสานคำนวณ Sheet เหลือ</p>
                 </div>
 
@@ -1448,9 +1601,9 @@ export default function InventoryMasterPage() {
                           <th className="px-3 py-2.5">หน่วย</th>
                           {selectedFileType === "USAGE" ? (
                             <>
-                              <th className="px-3 py-2.5 text-right font-mono">ใช้ 6</th>
-                              <th className="px-3 py-2.5 text-right font-mono">ใช้ 7</th>
-                              <th className="px-3 py-2.5 text-right font-mono">ใช้ 8</th>
+                              <th className="px-3 py-2.5 text-right font-mono">ย้อนหลัง 2 เดือน</th>
+                              <th className="px-3 py-2.5 text-right font-mono">ย้อนหลัง 1 เดือน</th>
+                              <th className="px-3 py-2.5 text-right font-mono">เดือนนี้</th>
                               <th className="px-3 py-2.5 text-right font-bold text-indigo-900">MAX</th>
                               <th className="px-3 py-2.5 text-right font-bold text-indigo-900">AVG</th>
                               <th className="px-3 py-2.5">หมวด</th>
@@ -1751,9 +1904,9 @@ export default function InventoryMasterPage() {
                   <th className="px-4 py-3">รหัสสินค้า</th>
                   <th className="px-4 py-3">ชื่อสินค้า</th>
                   <th className="px-4 py-3">หน่วย</th>
-                  <th className="px-4 py-3 text-right">ใช้เดือน 6</th>
-                  <th className="px-4 py-3 text-right">ใช้เดือน 7</th>
-                  <th className="px-4 py-3 text-right">ใช้เดือน 8</th>
+                  <th className="px-4 py-3 text-right">ย้อนหลัง 2 เดือน</th>
+                  <th className="px-4 py-3 text-right">ย้อนหลัง 1 เดือน</th>
+                  <th className="px-4 py-3 text-right">เดือนนี้</th>
                   <th className="px-4 py-3">หมวดสินค้า</th>
                   <th className="px-4 py-3">บริษัทผู้จัดจำหน่าย</th>
                 </tr>
