@@ -50,7 +50,13 @@ export async function POST(req: NextRequest) {
     // ทำการ Validate และ Parse
     const result = validateAndParseFile(fileType, buffer);
 
-    // ตรวจสอบประวัติการนำเข้าเดิมในฐานข้อมูล (Duplicate Check)
+    const rawPeriod = (formData.get("period") as string) || "";
+    // ถ้าไม่ได้ระบุงวด ให้ใช้วันที่ปัจจุบันเป็นงวด (YYYY-MM)
+    const now = new Date();
+    const currentPeriodStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const period = rawPeriod.trim() || currentPeriodStr;
+
+    // ตรวจสอบประวัติการนำเข้าเดิมในฐานข้อมูล (Duplicate Check ในงวดเดือนเดียวกัน)
     let existingBatchCount = 0;
     let latestBatch: any = null;
     let isDuplicate = false;
@@ -58,12 +64,12 @@ export async function POST(req: NextRequest) {
 
     try {
       existingBatchCount = await prisma.importBatch.count({
-        where: { fileType },
+        where: { fileType, period },
       });
 
       if (existingBatchCount > 0) {
         latestBatch = await prisma.importBatch.findFirst({
-          where: { fileType },
+          where: { fileType, period },
           orderBy: { createdAt: "desc" },
         });
 
@@ -81,7 +87,7 @@ export async function POST(req: NextRequest) {
           ? new Date(latestBatch.createdAt).toLocaleString("th-TH")
           : "";
 
-        duplicateMessage = `ตรวจพบข้อมูลประเภท "${typeName}" ในฐานข้อมูลแล้ว (${existingBatchCount} รอบ, ล่าสุดไฟล์ "${latestBatch?.fileName || "-"}" เมื่อ ${dateStr})`;
+        duplicateMessage = `ตรวจพบข้อมูลประเภท "${typeName}" ในงวด [${period}] อยู่แล้ว (${existingBatchCount} รอบ, ล่าสุดไฟล์ "${latestBatch?.fileName || "-"}" เมื่อ ${dateStr})`;
       }
     } catch (dbErr) {
       console.warn("Could not check duplicate batches from DB:", dbErr);
@@ -91,6 +97,7 @@ export async function POST(req: NextRequest) {
       success: true,
       fileName,
       fileSize: file.size,
+      period,
       duplicateInfo: {
         isDuplicate,
         existingBatchCount,

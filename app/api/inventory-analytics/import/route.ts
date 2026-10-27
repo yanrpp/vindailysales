@@ -33,24 +33,34 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // หากเลือกโหมดแทนที่ (OVERWRITE) ให้ลบข้อมูลชุดเดิมของประเภทนี้ออกก่อน
+    const rawPeriod = (formData.get("period") as string) || "";
+    const now = new Date();
+    const currentPeriodStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const period = rawPeriod.trim() || currentPeriodStr;
+
+    // หากเลือกโหมดแทนที่ (OVERWRITE) ให้ลบข้อมูลชุดเดิมของประเภทนี้ "เฉพาะในงวดเดือนเดียวกันนี้เท่านั้น"
+    // ทำให้ข้อมูลงวดเดือนก่อนหน้าหรือเดือนอื่นๆ ยังคงอยู่ครบถ้วน ไม่สูญหาย 100%
     let replacedBatchCount = 0;
     if (importMode === "OVERWRITE") {
       const deleteResult = await prisma.importBatch.deleteMany({
-        where: { fileType },
+        where: {
+          fileType,
+          period,
+        },
       });
       replacedBatchCount = deleteResult.count;
     }
 
-    // บันทึกรอบนำเข้าใหม่เข้า Database
+    // บันทึกรอบนำเข้าใหม่เข้า Database พร้อมระบุงวดเดือน
     const batch = await prisma.importBatch.create({
       data: {
         fileType,
+        period,
         fileName: file.name,
         totalRows: validation.totalRows,
         importedRows: validation.validRows,
         fileSize: file.size,
-        note: note ? `${note} (โหมด: ${importMode === "OVERWRITE" ? "แทนที่ข้อมูลเดิม" : "เพิ่มเป็นรอบใหม่"})` : null,
+        note: note ? `${note} (งวด: ${period}, โหมด: ${importMode === "OVERWRITE" ? "แทนที่รอบเดิม" : "เพิ่มเป็นรอบใหม่"})` : null,
       },
     });
 
@@ -64,6 +74,7 @@ export async function POST(req: NextRequest) {
         await prisma.inventoryBalance.createMany({
           data: chunk.map((item) => ({
             batchId: batch.id,
+            period,
             itemCode: item.itemCode,
             itemName: item.itemName,
             unit: item.unit,
@@ -80,6 +91,7 @@ export async function POST(req: NextRequest) {
         await prisma.inventoryDispense.createMany({
           data: chunk.map((item) => ({
             batchId: batch.id,
+            period,
             itemCode: item.itemCode,
             itemName: item.itemName,
             unit: item.unit,
@@ -96,6 +108,7 @@ export async function POST(req: NextRequest) {
         await prisma.inventorySale.createMany({
           data: chunk.map((item) => ({
             batchId: batch.id,
+            period,
             itemCode: item.itemCode,
             itemName: item.itemName,
             unit: item.unit,
@@ -112,6 +125,7 @@ export async function POST(req: NextRequest) {
         await prisma.inventoryUsage.createMany({
           data: chunk.map((item) => ({
             batchId: batch.id,
+            period,
             itemCode: item.itemCode,
             itemName: item.itemName,
             unit: item.unit,
@@ -125,12 +139,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const modeText = importMode === "OVERWRITE" ? `(แทนที่ข้อมูลเดิม ${replacedBatchCount} ชุด)` : "(เพิ่มเป็นชุดใหม่)";
+    const modeText = importMode === "OVERWRITE"
+      ? (replacedBatchCount > 0 ? `(แทนที่ข้อมูลงวดเดิม ${replacedBatchCount} ชุด)` : `(สร้างข้อมูลงวดใหม่)`)
+      : "(เพิ่มต่อยอดในงวดนี้)";
 
     return NextResponse.json({
       success: true,
-      message: `นำเข้าข้อมูลเรียบร้อยแล้ว จำนวน ${validation.validRows.toLocaleString()} แถว ${modeText}`,
+      message: `นำเข้าข้อมูลงวด [${period}] เรียบร้อยแล้ว จำนวน ${validation.validRows.toLocaleString()} แถว ${modeText}`,
       batchId: batch.id,
+      period,
       importedRows: validation.validRows,
       fileType,
       importMode,

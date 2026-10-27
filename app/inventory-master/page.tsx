@@ -77,6 +77,33 @@ export default function InventoryMasterPage() {
     return num.toLocaleString("th-TH");
   };
 
+  // Helper แปลง period เช่น "2026-10" -> "ตุลาคม 2569"
+  const formatPeriodLabel = (p: string) => {
+    if (!p || p === "ALL") return "ทุกงวดเดือน (ภาพรวมสะสม)";
+    const parts = p.split("-");
+    if (parts.length < 2) return p;
+    const y = parseInt(parts[0], 10);
+    const m = parseInt(parts[1], 10);
+    const monthsTh = [
+      "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
+      "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+    ];
+    const monthName = monthsTh[m - 1] || `${m}`;
+    const thaiYear = y + 543;
+    return `${monthName} ${thaiYear} (${p})`;
+  };
+
+  // คำนวณเดือนปัจจุบัน และเดือนถัดไป เป็นค่าเริ่มต้น
+  const now = new Date();
+  const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+  const nextMonthDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+  const nextMonthStr = `${nextMonthDate.getFullYear()}-${String(nextMonthDate.getMonth() + 1).padStart(2, "0")}`;
+
+  // Period filter & Upload period state
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("LATEST");
+  const [availablePeriods, setAvailablePeriods] = useState<string[]>(["2026-10"]);
+  const [importPeriod, setImportPeriod] = useState<string>(currentMonthStr);
+
   // Upload state
   const [selectedFileType, setSelectedFileType] = useState<InventoryFileType>("USAGE");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -127,18 +154,19 @@ export default function InventoryMasterPage() {
   // Batches state
   const [batches, setBatches] = useState<any[]>([]);
 
-  // Fetch data when switching tabs or changing filters / sorting
+  // Fetch data when switching tabs or changing filters / sorting / period
   useEffect(() => {
     if (activeTab !== "upload") {
       fetchTabData();
     }
-  }, [activeTab, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, sortBy, sortOrder]);
+  }, [activeTab, selectedPeriod, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, sortBy, sortOrder]);
 
   const fetchTabData = async () => {
     setLoadingData(true);
     try {
       const queryParams = new URLSearchParams({
         tab: activeTab,
+        period: selectedPeriod,
         search: searchTerm,
         category: selectedCategory,
         supplier: selectedSupplier,
@@ -153,6 +181,9 @@ export default function InventoryMasterPage() {
       const res = await fetch(`/api/inventory-analytics/overview?${queryParams.toString()}`);
       const data = await res.json();
       if (res.ok) {
+        if (data.availablePeriods && data.availablePeriods.length > 0) {
+          setAvailablePeriods(data.availablePeriods);
+        }
         if (activeTab === "batches") {
           setBatches(data.batches || []);
         } else {
@@ -225,6 +256,7 @@ export default function InventoryMasterPage() {
       const formData = new FormData();
       formData.append("file", file);
       formData.append("fileType", fileType);
+      formData.append("period", importPeriod);
 
       const res = await fetch("/api/inventory-analytics/validate", {
         method: "POST",
@@ -271,7 +303,7 @@ export default function InventoryMasterPage() {
           ? "3. ยอดขาย"
           : "4. ปริมาณการใช้ & คู่ค้า";
 
-      const confirmMsg = `ยืนยันการแทนที่ข้อมูลเดิมของ "${typeName}" ใช่หรือไม่?\n(ระบบจะลบข้อมูลชุดเดิมออกจากฐานข้อมูลและนำเข้าข้อมูลชุดใหม่นี้แทน)`;
+      const confirmMsg = `ยืนยันการแทนที่ข้อมูลเดิมของ "${typeName}" ในงวด [${importPeriod}] ใช่หรือไม่?\n(ระบบจะลบข้อมูลชุดเดิมเฉพาะในงวดนี้ และนำเข้าชุดใหม่นี้แทน โดยข้อมูลเดือนอื่นๆ ยังคงอยู่ครบถ้วน)`;
       if (!confirm(confirmMsg)) return;
     }
 
@@ -283,6 +315,7 @@ export default function InventoryMasterPage() {
       formData.append("file", selectedFile);
       formData.append("fileType", selectedFileType);
       formData.append("importMode", importMode);
+      formData.append("period", importPeriod);
       if (note) formData.append("note", note);
 
       const res = await fetch("/api/inventory-analytics/import", {
@@ -297,6 +330,14 @@ export default function InventoryMasterPage() {
         setValidationResult(null);
         setNote("");
         if (fileInputRef.current) fileInputRef.current.value = "";
+        // อัปเดต selectedPeriod ให้เป็นงวดที่เพิ่งนำเข้า และเพิ่มลง availablePeriods
+        setSelectedPeriod(importPeriod);
+        setAvailablePeriods((prev) => {
+          if (!prev.includes(importPeriod)) {
+            return [importPeriod, ...prev].sort().reverse();
+          }
+          return prev;
+        });
       } else {
         alert(data.error || "เกิดข้อผิดพลาดในการนำเข้า");
       }
@@ -308,8 +349,13 @@ export default function InventoryMasterPage() {
     }
   };
 
-  // Direct Clear Data from Database
-  const handleClearData = async (fileType: "BALANCE" | "DISPENSE" | "SALE" | "USAGE" | "ALL") => {
+  // Direct Clear Data from Database (รองรับลบเฉพาะงวดเดือนที่เลือก)
+  const handleClearData = async (
+    fileType: "BALANCE" | "DISPENSE" | "SALE" | "USAGE" | "ALL",
+    targetPeriod?: string
+  ) => {
+    const periodToClear = targetPeriod !== undefined ? targetPeriod : (selectedPeriod !== "ALL" ? selectedPeriod : undefined);
+    const periodText = periodToClear ? ` ในงวด [${formatPeriodLabel(periodToClear)}]` : " ทั้งหมดทุกงวดเดือน";
     const typeName =
       fileType === "BALANCE"
         ? "1. ยอดคงเหลือ"
@@ -323,7 +369,7 @@ export default function InventoryMasterPage() {
 
     if (
       !confirm(
-        `⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบ "${typeName}" ออกจากฐานข้อมูลทั้งหมด?\nการดำเนินการนี้จะลบข้อมูลและประวัติการนำเข้าทันทีและไม่สามารถกู้คืนได้!`
+        `⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบ "${typeName}"${periodText} ออกจากฐานข้อมูล?\n(หากระบุงวด ระบบจะลบเฉพาะงวดนั้น ข้อมูลงวดเดือนอื่นจะไม่ได้รับผลกระทบ)`
       )
     ) {
       return;
@@ -331,7 +377,8 @@ export default function InventoryMasterPage() {
 
     setIsClearing(true);
     try {
-      const res = await fetch(`/api/inventory-analytics/clear?fileType=${fileType}`, {
+      const url = `/api/inventory-analytics/clear?fileType=${fileType}${periodToClear ? `&period=${periodToClear}` : ""}`;
+      const res = await fetch(url, {
         method: "DELETE",
       });
       const data = await res.json();
@@ -542,6 +589,44 @@ export default function InventoryMasterPage() {
               <div className="text-[11px] text-blue-200">4. ใช้ย้อนหลัง</div>
               <div className="text-lg font-bold">{formatNum(metrics?.totalUsageRecords || 0)}</div>
             </div>
+          </div>
+        </div>
+
+        {/* Global Period Selector Bar */}
+        <div className="relative z-10 mt-4 pt-3 border-t border-white/20 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-semibold text-blue-100 flex items-center gap-1.5">
+              📅 ข้อมูลงวดประจำเดือน:
+            </span>
+            <div className="inline-flex items-center bg-white/20 hover:bg-white/30 backdrop-blur-md rounded-xl px-2.5 py-1 border border-white/30 shadow-sm transition-all">
+              <select
+                value={selectedPeriod}
+                onChange={(e) => {
+                  setSelectedPeriod(e.target.value);
+                  setCurrentPage(1);
+                }}
+                className="bg-transparent text-white font-bold text-xs focus:outline-none cursor-pointer [&>option]:text-gray-900 [&>option]:bg-white"
+              >
+                <option value="LATEST">
+                  🌟 งวดล่าสุด ({formatPeriodLabel(availablePeriods[0] || currentMonthStr)})
+                </option>
+                {availablePeriods.map((p) => (
+                  <option key={p} value={p}>
+                    📅 {formatPeriodLabel(p)}
+                  </option>
+                ))}
+                <option value="ALL">🌐 ทุกงวดเดือน (ภาพรวมสะสมทั้งหมด)</option>
+              </select>
+            </div>
+            {selectedPeriod !== "ALL" && (
+              <span className="bg-emerald-500/30 text-emerald-100 border border-emerald-300/40 rounded-lg px-2.5 py-1 text-[11px] font-semibold">
+                แสดงข้อมูลงวด: {formatPeriodLabel(selectedPeriod === "LATEST" ? (availablePeriods[0] || currentMonthStr) : selectedPeriod)}
+              </span>
+            )}
+          </div>
+
+          <div className="text-[11px] text-blue-100 flex items-center gap-1 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
+            <span>✨ ข้อมูลแต่ละงวดเดือนถูกจัดเก็บแยกกันอิสระ นำเข้าเดือนถัดไปได้ทันทีโดยไม่ทับข้อมูลเก่า</span>
           </div>
         </div>
       </div>
@@ -1204,6 +1289,68 @@ export default function InventoryMasterPage() {
       {/* TAB 2: UPLOAD & VALIDATION (4 FILE CARDS) */}
       {activeTab === "upload" && (
         <div className="space-y-6">
+          {/* งวดประจำเดือนที่จะนำเข้า (Import Period Box) */}
+          <div className="rounded-2xl bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 p-5 border-2 border-blue-200 shadow-sm">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div className="flex items-start gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white flex-shrink-0 shadow-md">
+                  <Database className="h-6 w-6" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-bold text-gray-900 text-sm md:text-base">
+                      📅 เลือกงวดประจำเดือนที่ต้องการนำเข้าข้อมูล
+                    </h3>
+                    <span className="rounded-full bg-blue-600 text-white px-2.5 py-0.5 text-[11px] font-bold">
+                      {formatPeriodLabel(importPeriod)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-blue-900 mt-1">
+                    ✨ <b>ระบบเก็บข้อมูลแยกตามงวดเดือน</b>: หากนำเข้าของ <b>เดือนถัดไป</b> ข้อมูลของเดือนเดิมจะไม่สูญหายและไม่ถูกทับ สามารถย้อนดูหรือเปรียบเทียบได้ตลอดเวลา
+                  </p>
+                </div>
+              </div>
+
+              {/* ปุ่มลัดเลือกงวดเดือน */}
+              <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-blue-200 shadow-sm">
+                <span className="text-xs font-semibold text-gray-600 pl-1">งวด:</span>
+                <button
+                  type="button"
+                  onClick={() => setImportPeriod(currentMonthStr)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importPeriod === currentMonthStr
+                      ? "bg-blue-600 text-white shadow-sm"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  📌 เดือนปัจจุบัน ({formatPeriodLabel(currentMonthStr)})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportPeriod(nextMonthStr)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importPeriod === nextMonthStr
+                      ? "bg-indigo-600 text-white shadow-sm"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  🚀 เดือนถัดไป ({formatPeriodLabel(nextMonthStr)})
+                </button>
+                <div className="flex items-center gap-1 border-l pl-2 border-gray-300">
+                  <span className="text-[11px] text-gray-500">ระบุเอง:</span>
+                  <input
+                    type="month"
+                    value={importPeriod}
+                    onChange={(e) => {
+                      if (e.target.value) setImportPeriod(e.target.value);
+                    }}
+                    className="rounded-lg border border-gray-300 px-2 py-1 text-xs font-mono text-gray-800 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* 4 Direct Browse Action Cards */}
           <div className="rounded-2xl bg-white p-6 shadow-sm border border-gray-200">
             <div className="flex items-center justify-between mb-4">
@@ -1213,7 +1360,7 @@ export default function InventoryMasterPage() {
                   กดเลือกไฟล์ที่ต้องการนำเข้า (คลิกที่การ์ดเพื่อเปิดเลือกไฟล์ทันที)
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  คลิกที่การ์ดไฟล์ใดก็ได้ ระบบจะเปิดหน้าต่างเลือกไฟล์ให้ทันทีและตรวจความถูกต้องทันที
+                  ไฟล์ที่นำเข้าจะถูกบันทึกเข้าสู่ <b>งวด {formatPeriodLabel(importPeriod)}</b> โดยอัตโนมัติ
                 </p>
               </div>
 
@@ -1497,18 +1644,25 @@ export default function InventoryMasterPage() {
                       </div>
                     )}
                     <div>
-                      <h3 className="text-base md:text-lg font-bold text-gray-900">
-                        {validationResult.isValid
-                          ? `✅ โครงสร้างไฟล์ "${selectedFile?.name}" ถูกต้อง พร้อมนำเข้า`
-                          : "❌ โครงสร้างไฟล์ไม่ถูกต้อง ไม่อนุญาตให้นำเข้า"}
-                      </h3>
-                      <p className="text-xs text-gray-600">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h3 className="text-base md:text-lg font-bold text-gray-900">
+                          {validationResult.isValid
+                            ? `✅ โครงสร้างไฟล์ "${selectedFile?.name}" ถูกต้อง พร้อมนำเข้า`
+                            : "❌ โครงสร้างไฟล์ไม่ถูกต้อง ไม่อนุญาตให้นำเข้า"}
+                        </h3>
+                        {validationResult.isValid && (
+                          <span className="rounded-full bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-sm">
+                            งวด: {formatPeriodLabel(importPeriod)}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-gray-600 mt-0.5">
                         Sheet: <b>{validationResult.sheetName || "-"}</b> | สแกนทั้งหมด{" "}
                         <b>{formatNum(validationResult.totalRows)}</b> แถว | พบข้อมูลตรงเงื่อนไข{" "}
                         <b className="text-emerald-700 font-bold">
                           {formatNum(validationResult.validRows)}
                         </b>{" "}
-                        แถว
+                        แถว (จะบันทึกลงในงวด <b>{formatPeriodLabel(importPeriod)}</b> โดยไม่กระทบงวดอื่น)
                       </p>
                     </div>
                   </div>
@@ -1519,19 +1673,21 @@ export default function InventoryMasterPage() {
                         <button
                           type="button"
                           onClick={() => setImportMode("OVERWRITE")}
-                          className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 transition-all ${
+                          title={`ลบเฉพาะชุดเดิมของงวด ${importPeriod} แล้วแทนที่`}
+                          className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${
                             importMode === "OVERWRITE"
                               ? "bg-blue-600 text-white shadow-sm"
                               : "text-gray-600 hover:text-gray-900"
                           }`}
                         >
                           <RotateCcw className="h-3.5 w-3.5" />
-                          <span>🔄 แทนที่รอบเดิม</span>
+                          <span>🔄 แทนที่ในงวดนี้</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => setImportMode("APPEND")}
-                          className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 transition-all ${
+                          title={`เพิ่มต่อยอดในงวด ${importPeriod}`}
+                          className={`flex items-center gap-1 rounded-lg px-2.5 py-1.5 transition-all cursor-pointer ${
                             importMode === "APPEND"
                               ? "bg-blue-600 text-white shadow-sm"
                               : "text-gray-600 hover:text-gray-900"
@@ -1563,7 +1719,7 @@ export default function InventoryMasterPage() {
                           ) : (
                             <>
                               <Check className="h-3.5 w-3.5" />
-                              <span>บันทึกเข้า DB ({formatNum(validationResult.validRows)})</span>
+                              <span>บันทึกเข้างวด [{importPeriod}] ({formatNum(validationResult.validRows)})</span>
                             </>
                           )}
                         </button>
@@ -1935,24 +2091,43 @@ export default function InventoryMasterPage() {
       {/* TAB 7: BATCHES */}
       {activeTab === "batches" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
             <div className="text-xs text-gray-500 font-medium">
               แสดงประวัติและชุดข้อมูลที่นำเข้าทั้งหมด ({batches.length} ชุด)
+              {selectedPeriod !== "ALL" && (
+                <span className="ml-2 font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
+                  (เฉพาะงวด: {formatPeriodLabel(selectedPeriod === "LATEST" ? (availablePeriods[0] || currentMonthStr) : selectedPeriod)})
+                </span>
+              )}
             </div>
-            <button
-              onClick={() => handleClearData("ALL")}
-              disabled={isClearing}
-              className="flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 shadow-sm"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              <span>ล้างประวัติและข้อมูลทั้งหมด (Reset Database)</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {selectedPeriod !== "ALL" && (
+                <button
+                  onClick={() => handleClearData("ALL", selectedPeriod === "LATEST" ? (availablePeriods[0] || currentMonthStr) : selectedPeriod)}
+                  disabled={isClearing}
+                  className="flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-500 hover:bg-amber-600 px-3.5 py-2 text-xs font-bold text-white shadow-sm transition-colors cursor-pointer"
+                  title="ลบเฉพาะข้อมูลในงวดที่กำลังแสดง โดยไม่กระทบงวดอื่น"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  <span>ลบเฉพาะงวดนี้ ({formatPeriodLabel(selectedPeriod === "LATEST" ? (availablePeriods[0] || currentMonthStr) : selectedPeriod)})</span>
+                </button>
+              )}
+              <button
+                onClick={() => handleClearData("ALL", "ALL")}
+                disabled={isClearing}
+                className="flex items-center gap-1.5 rounded-xl border border-red-300 bg-red-600 px-4 py-2 text-xs font-bold text-white hover:bg-red-700 shadow-sm transition-colors cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                <span>ล้างข้อมูลทุกงวด (Reset Database)</span>
+              </button>
+            </div>
           </div>
 
           <div className="rounded-2xl bg-white shadow-sm border border-gray-200 overflow-hidden">
             <table className="w-full text-left text-xs text-gray-600">
               <thead className="bg-gray-50 text-gray-800 font-semibold border-b border-gray-200">
                 <tr>
+                  <th className="px-4 py-3">งวดประจำเดือน</th>
                   <th className="px-4 py-3">วันที่และเวลานำเข้า</th>
                   <th className="px-4 py-3">ประเภทไฟล์</th>
                   <th className="px-4 py-3">ชื่อไฟล์</th>
@@ -1962,48 +2137,61 @@ export default function InventoryMasterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {batches.map((batch) => (
-                  <tr key={batch.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 font-mono text-gray-700">
-                      {new Date(batch.createdAt).toLocaleString("th-TH")}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
-                          batch.fileType === "BALANCE"
-                            ? "bg-blue-100 text-blue-700"
-                            : batch.fileType === "DISPENSE"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : batch.fileType === "SALE"
-                            ? "bg-purple-100 text-purple-700"
-                            : "bg-amber-100 text-amber-800"
-                        }`}
-                      >
-                        {batch.fileType === "BALANCE"
-                          ? "1. คงเหลือ"
-                          : batch.fileType === "DISPENSE"
-                          ? "2. ตัดจ่าย"
-                          : batch.fileType === "SALE"
-                          ? "3. ขาย"
-                          : "4. ปริมาณการใช้"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 font-medium text-gray-900">{batch.fileName}</td>
-                    <td className="px-4 py-3 text-right font-bold text-gray-900">
-                      {formatNum(batch.importedRows)} แถว
-                    </td>
-                    <td className="px-4 py-3 text-gray-500">{batch.note || "-"}</td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => handleDeleteBatch(batch.id)}
-                        className="rounded-lg p-1.5 text-red-600 hover:bg-red-50 transition-colors"
-                        title="ลบชุดข้อมูลนี้"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
+                {batches.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
+                      ไม่พบประวัติการนำเข้าในงวดนี้
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  batches.map((batch) => (
+                    <tr key={batch.id} className="hover:bg-gray-50">
+                      <td className="px-4 py-3">
+                        <span className="rounded-lg bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 text-xs font-bold">
+                          📅 {formatPeriodLabel(batch.period || "-")}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-gray-700">
+                        {new Date(batch.createdAt).toLocaleString("th-TH")}
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                            batch.fileType === "BALANCE"
+                              ? "bg-blue-100 text-blue-700"
+                              : batch.fileType === "DISPENSE"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : batch.fileType === "SALE"
+                              ? "bg-purple-100 text-purple-700"
+                              : "bg-amber-100 text-amber-800"
+                          }`}
+                        >
+                          {batch.fileType === "BALANCE"
+                            ? "1. คงเหลือ"
+                            : batch.fileType === "DISPENSE"
+                            ? "2. ตัดจ่าย"
+                            : batch.fileType === "SALE"
+                            ? "3. ขาย"
+                            : "4. ปริมาณการใช้"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-medium text-gray-900">{batch.fileName}</td>
+                      <td className="px-4 py-3 text-right font-bold text-gray-900">
+                        {formatNum(batch.importedRows)} แถว
+                      </td>
+                      <td className="px-4 py-3 text-gray-500">{batch.note || "-"}</td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => handleDeleteBatch(batch.id)}
+                          className="rounded-lg p-1.5 text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                          title="ลบชุดข้อมูลนี้"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

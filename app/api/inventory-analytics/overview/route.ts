@@ -21,10 +21,40 @@ export async function GET(req: NextRequest) {
       : Math.max(10, Math.min(200, parseInt(searchParams.get("limit") || "50")));
     const skip = limit !== undefined ? (page - 1) * limit : undefined;
 
+    // หา Available Periods ทั้งหมดที่มีในระบบ
+    const distinctBatches = await prisma.importBatch.findMany({
+      where: { period: { not: null } },
+      select: { period: true },
+      distinct: ["period"],
+      orderBy: { period: "desc" },
+    });
+    const availablePeriods = distinctBatches
+      .map((b) => b.period as string)
+      .filter(Boolean);
+
+    const periodParam = searchParams.get("period")?.trim();
+    let selectedPeriod: string;
+    if (periodParam === "ALL") {
+      selectedPeriod = "ALL";
+    } else if (periodParam && periodParam !== "LATEST") {
+      selectedPeriod = periodParam;
+    } else {
+      const now = new Date();
+      const currentMonthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      selectedPeriod = availablePeriods.length > 0 ? availablePeriods[0] : currentMonthStr;
+    }
+
+    const periodFilter = selectedPeriod !== "ALL" ? { period: selectedPeriod } : {};
+
     // 1. Tab Batches
     if (tab === "batches") {
-      const total = await prisma.importBatch.count();
+      const batchWhere: any = {};
+      if (selectedPeriod !== "ALL") {
+        batchWhere.period = selectedPeriod;
+      }
+      const total = await prisma.importBatch.count({ where: batchWhere });
       const batches = await prisma.importBatch.findMany({
+        where: batchWhere,
         orderBy: { createdAt: "desc" },
         take: limit,
         skip,
@@ -32,20 +62,25 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         batches,
+        selectedPeriod,
+        availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
     // 2. Tab Balance
     if (tab === "balance") {
-      const where: any = search
-        ? {
-            OR: [
-              { itemCode: { contains: search, mode: "insensitive" } },
-              { itemName: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {};
+      const where: any = {
+        ...periodFilter,
+        ...(search
+          ? {
+              OR: [
+                { itemCode: { contains: search, mode: "insensitive" } },
+                { itemName: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
 
       const total = await prisma.inventoryBalance.count({ where });
       const items = await prisma.inventoryBalance.findMany({
@@ -62,20 +97,25 @@ export async function GET(req: NextRequest) {
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
+        selectedPeriod,
+        availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
     // 3. Tab Dispense
     if (tab === "dispense") {
-      const where: any = search
-        ? {
-            OR: [
-              { itemCode: { contains: search, mode: "insensitive" } },
-              { itemName: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {};
+      const where: any = {
+        ...periodFilter,
+        ...(search
+          ? {
+              OR: [
+                { itemCode: { contains: search, mode: "insensitive" } },
+                { itemName: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
 
       const total = await prisma.inventoryDispense.count({ where });
       const items = await prisma.inventoryDispense.findMany({
@@ -92,20 +132,25 @@ export async function GET(req: NextRequest) {
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
+        selectedPeriod,
+        availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
     // 4. Tab Sale
     if (tab === "sale") {
-      const where: any = search
-        ? {
-            OR: [
-              { itemCode: { contains: search, mode: "insensitive" } },
-              { itemName: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {};
+      const where: any = {
+        ...periodFilter,
+        ...(search
+          ? {
+              OR: [
+                { itemCode: { contains: search, mode: "insensitive" } },
+                { itemName: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
 
       const total = await prisma.inventorySale.count({ where });
       const items = await prisma.inventorySale.findMany({
@@ -122,22 +167,27 @@ export async function GET(req: NextRequest) {
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
+        selectedPeriod,
+        availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
     // 5. Tab Usage (ปริมาณการใช้ & คู่ค้า)
     if (tab === "usage") {
-      const where: any = search
-        ? {
-            OR: [
-              { itemCode: { contains: search, mode: "insensitive" } },
-              { itemName: { contains: search, mode: "insensitive" } },
-              { category: { contains: search, mode: "insensitive" } },
-              { supplier: { contains: search, mode: "insensitive" } },
-            ],
-          }
-        : {};
+      const where: any = {
+        ...periodFilter,
+        ...(search
+          ? {
+              OR: [
+                { itemCode: { contains: search, mode: "insensitive" } },
+                { itemName: { contains: search, mode: "insensitive" } },
+                { category: { contains: search, mode: "insensitive" } },
+                { supplier: { contains: search, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      };
 
       const total = await prisma.inventoryUsage.count({ where });
       const items = await prisma.inventoryUsage.findMany({
@@ -156,6 +206,8 @@ export async function GET(req: NextRequest) {
           category: item.category ? fixThaiEncoding(item.category) : null,
           supplier: item.supplier ? fixThaiEncoding(item.supplier) : null,
         })),
+        selectedPeriod,
+        availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
@@ -163,6 +215,7 @@ export async function GET(req: NextRequest) {
     // 6. Master Overview: รวมข้อมูล 4 ส่วนตามโครงสร้าง Sheet "เหลือ" + ยอดค้างส่ง
     const [balances, dispenses, sales, usages, pendingList] = await Promise.all([
       prisma.inventoryBalance.findMany({
+        where: periodFilter,
         select: {
           itemCode: true,
           itemName: true,
@@ -174,6 +227,7 @@ export async function GET(req: NextRequest) {
         },
       }),
       prisma.inventoryDispense.findMany({
+        where: periodFilter,
         select: {
           itemCode: true,
           itemName: true,
@@ -185,6 +239,7 @@ export async function GET(req: NextRequest) {
         },
       }),
       prisma.inventorySale.findMany({
+        where: periodFilter,
         select: {
           itemCode: true,
           itemName: true,
@@ -196,6 +251,7 @@ export async function GET(req: NextRequest) {
         },
       }),
       prisma.inventoryUsage.findMany({
+        where: periodFilter,
         select: {
           itemCode: true,
           itemName: true,
@@ -518,6 +574,8 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
 
     return NextResponse.json({
       items: paginatedItems,
+      selectedPeriod,
+      availablePeriods,
       metrics: {
         totalUniqueCodes: itemMap.size,
         totalBalanceRecords: balances.length,

@@ -5,6 +5,7 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const fileType = searchParams.get("fileType"); // "BALANCE" | "DISPENSE" | "SALE" | "USAGE" | "ALL"
+    const period = searchParams.get("period")?.trim(); // งวด เช่น "2026-10"
 
     if (!fileType) {
       return NextResponse.json(
@@ -13,29 +14,28 @@ export async function DELETE(req: NextRequest) {
       );
     }
 
-    if (fileType === "ALL") {
-      // ลบทั้งหมด
-      const res = await prisma.importBatch.deleteMany({});
-      return NextResponse.json({
-        success: true,
-        message: `ลบข้อมูลรายงานทั้งหมดในฐานข้อมูลเรียบร้อยแล้ว (${res.count} ชุดข้อมูล)`,
-        deletedBatches: res.count,
-      });
+    const whereClause: any = {};
+    if (fileType !== "ALL") {
+      if (!["BALANCE", "DISPENSE", "SALE", "USAGE"].includes(fileType)) {
+        return NextResponse.json(
+          { error: "ประเภทข้อมูลไม่ถูกต้อง" },
+          { status: 400 }
+        );
+      }
+      whereClause.fileType = fileType;
     }
-
-    if (!["BALANCE", "DISPENSE", "SALE", "USAGE"].includes(fileType)) {
-      return NextResponse.json(
-        { error: "ประเภทข้อมูลไม่ถูกต้อง" },
-        { status: 400 }
-      );
+    if (period && period !== "ALL") {
+      whereClause.period = period;
     }
 
     const res = await prisma.importBatch.deleteMany({
-      where: { fileType },
+      where: whereClause,
     });
 
     const typeName =
-      fileType === "BALANCE"
+      fileType === "ALL"
+        ? "ทั้งหมด"
+        : fileType === "BALANCE"
         ? "1. ยอดคงเหลือ"
         : fileType === "DISPENSE"
         ? "2. ยอดตัดจ่าย"
@@ -43,9 +43,11 @@ export async function DELETE(req: NextRequest) {
         ? "3. ยอดขาย"
         : "4. ปริมาณการใช้ & คู่ค้า";
 
+    const periodText = period && period !== "ALL" ? ` ในงวด [${period}]` : "";
+
     return NextResponse.json({
       success: true,
-      message: `ลบข้อมูล "${typeName}" ในฐานข้อมูลเรียบร้อยแล้ว (${res.count} ชุดข้อมูล)`,
+      message: `ลบข้อมูล "${typeName}"${periodText} เรียบร้อยแล้ว (${res.count} ชุดข้อมูล)`,
       deletedBatches: res.count,
     });
   } catch (error: any) {

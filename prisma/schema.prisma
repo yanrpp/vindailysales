@@ -144,6 +144,7 @@ model ProductStockRecord {
 // 8. Import Batch (ประวัติการนำเข้าไฟล์รายงาน)
 model ImportBatch {
   id           String              @id @default(uuid())
+  period       String?             @map("period") // เช่น "2026-10", "2026-11"
   fileType     String              @map("file_type") // "BALANCE" | "DISPENSE" | "SALE" | "USAGE"
   fileName     String              @map("file_name")
   totalRows    Int                 @default(0) @map("total_rows")
@@ -157,7 +158,9 @@ model ImportBatch {
   sales        InventorySale[]
   usages       InventoryUsage[]
 
+  @@index([period])
   @@index([fileType, createdAt])
+  @@index([fileType, period])
   @@map("import_batches")
 }
 
@@ -166,6 +169,7 @@ model InventoryBalance {
   id          String       @id @default(uuid())
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  period      String?      @map("period")
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col D
@@ -178,6 +182,8 @@ model InventoryBalance {
 
   @@index([itemCode])
   @@index([batchId])
+  @@index([period])
+  @@index([period, itemCode])
   @@map("inventory_balances")
 }
 
@@ -186,6 +192,7 @@ model InventoryDispense {
   id          String       @id @default(uuid())
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  period      String?      @map("period")
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col F
@@ -198,6 +205,8 @@ model InventoryDispense {
 
   @@index([itemCode])
   @@index([batchId])
+  @@index([period])
+  @@index([period, itemCode])
   @@map("inventory_dispenses")
 }
 
@@ -206,6 +215,7 @@ model InventorySale {
   id          String       @id @default(uuid())
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  period      String?      @map("period")
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col F
@@ -218,6 +228,8 @@ model InventorySale {
 
   @@index([itemCode])
   @@index([batchId])
+  @@index([period])
+  @@index([period, itemCode])
   @@map("inventory_sales")
 }
 
@@ -226,6 +238,7 @@ model InventoryUsage {
   id          String       @id @default(uuid())
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  period      String?      @map("period")
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col D
@@ -241,6 +254,8 @@ model InventoryUsage {
   @@index([category])
   @@index([supplier])
   @@index([batchId])
+  @@index([period])
+  @@index([period, itemCode])
   @@map("inventory_usages")
 }
 
@@ -248,10 +263,12 @@ model InventoryUsage {
 model InventoryPendingDelivery {
   id        String   @id @default(uuid())
   itemCode  String   @unique @map("item_code")
+  period    String?  @map("period")
   qty       Float    @default(0)
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@index([itemCode])
+  @@index([period])
   @@map("inventory_pending_deliveries")
 }
