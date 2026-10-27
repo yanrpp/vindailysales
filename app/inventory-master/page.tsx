@@ -1820,7 +1820,10 @@ export default function InventoryMasterPage() {
                 type="text"
                 placeholder="ค้นหารายการคงเหลือ..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
               />
             </div>
@@ -1847,6 +1850,7 @@ export default function InventoryMasterPage() {
             <table className="w-full text-left text-xs text-gray-600">
               <thead className="bg-gray-50 text-gray-800 font-semibold border-b border-gray-200">
                 <tr>
+                  <th className="px-3 py-3 text-center w-14">ลำดับ</th>
                   <th className="px-4 py-3">รหัสสินค้า</th>
                   <th className="px-4 py-3">ชื่อสินค้า</th>
                   <th className="px-4 py-3">หน่วย</th>
@@ -1858,24 +1862,67 @@ export default function InventoryMasterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {tableData.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/80">
-                    <td className="px-4 py-2.5 font-bold text-blue-700 font-mono">{item.itemCode}</td>
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
-                    <td className="px-4 py-2.5">{item.unit || "-"}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-gray-900">
-                      {formatNum(item.balanceQty)}
+                {loadingData ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <RefreshCw className="mx-auto h-6 w-6 animate-spin text-blue-600 mb-2" />
+                      กำลังโหลดข้อมูล...
                     </td>
-                    <td className="px-4 py-2.5 text-right text-amber-700 font-semibold">
-                      {formatNum(item.minQty)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right">{formatNum(item.unitPrice, 2)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.totalCost, 2)}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400">{item.batch?.fileName || "-"}</td>
                   </tr>
-                ))}
+                ) : tableData.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <Package className="mx-auto h-8 w-8 text-gray-300 mb-2" />
+                      ไม่พบข้อมูล
+                    </td>
+                  </tr>
+                ) : (
+                  tableData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50/80">
+                      <td className="px-3 py-2.5 text-center font-mono text-gray-400">
+                        {(currentPage - 1) * 50 + idx + 1}
+                      </td>
+                      <td className="px-4 py-2.5 font-bold text-blue-700 font-mono">{item.itemCode}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
+                      <td className="px-4 py-2.5">{item.unit || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-gray-900">
+                        {formatNum(item.balanceQty)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-amber-700 font-semibold">
+                        {formatNum(item.minQty)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">{formatNum(item.unitPrice, 2)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.totalCost, 2)}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-400">{item.batch?.fileName || "-"}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 bg-gray-50 text-xs text-gray-600">
+              <div>
+                แสดงหน้า <b>{currentPage}</b> จาก <b>{totalPages}</b> (ทั้งหมด{" "}
+                <b>{formatNum(totalCount)}</b> รายการ)
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1 || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ก่อนหน้า
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ถัดไป
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1890,7 +1937,10 @@ export default function InventoryMasterPage() {
                 type="text"
                 placeholder="ค้นหารายการตัดจ่าย..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
               />
             </div>
@@ -1917,6 +1967,7 @@ export default function InventoryMasterPage() {
             <table className="w-full text-left text-xs text-gray-600">
               <thead className="bg-gray-50 text-gray-800 font-semibold border-b border-gray-200">
                 <tr>
+                  <th className="px-3 py-3 text-center w-14">ลำดับ</th>
                   <th className="px-4 py-3">รหัสสินค้า</th>
                   <th className="px-4 py-3">ชื่อสินค้า</th>
                   <th className="px-4 py-3">หน่วย</th>
@@ -1930,22 +1981,65 @@ export default function InventoryMasterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {tableData.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/80">
-                    <td className="px-4 py-2.5 font-bold text-blue-700 font-mono">{item.itemCode}</td>
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
-                    <td className="px-4 py-2.5">{item.unit || "-"}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.rawQty)}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-emerald-700 bg-emerald-50/50 font-mono">
-                      {formatNum(item.adjustedQty, 2)}
+                {loadingData ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <RefreshCw className="mx-auto h-6 w-6 animate-spin text-blue-600 mb-2" />
+                      กำลังโหลดข้อมูล...
                     </td>
-                    <td className="px-4 py-2.5 text-right">{formatNum(item.unitPrice, 2)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.totalCost, 2)}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400">{item.batch?.fileName || "-"}</td>
                   </tr>
-                ))}
+                ) : tableData.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <Package className="mx-auto h-8 w-8 text-gray-300 mb-2" />
+                      ไม่พบข้อมูล
+                    </td>
+                  </tr>
+                ) : (
+                  tableData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50/80">
+                      <td className="px-3 py-2.5 text-center font-mono text-gray-400">
+                        {(currentPage - 1) * 50 + idx + 1}
+                      </td>
+                      <td className="px-4 py-2.5 font-bold text-blue-700 font-mono">{item.itemCode}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
+                      <td className="px-4 py-2.5">{item.unit || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.rawQty)}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-emerald-700 bg-emerald-50/50 font-mono">
+                        {formatNum(item.adjustedQty, 2)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">{formatNum(item.unitPrice, 2)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.totalCost, 2)}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-400">{item.batch?.fileName || "-"}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 bg-gray-50 text-xs text-gray-600">
+              <div>
+                แสดงหน้า <b>{currentPage}</b> จาก <b>{totalPages}</b> (ทั้งหมด{" "}
+                <b>{formatNum(totalCount)}</b> รายการ)
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1 || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ก่อนหน้า
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ถัดไป
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -1960,7 +2054,10 @@ export default function InventoryMasterPage() {
                 type="text"
                 placeholder="ค้นหารายการขาย..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
               />
             </div>
@@ -1987,6 +2084,7 @@ export default function InventoryMasterPage() {
             <table className="w-full text-left text-xs text-gray-600">
               <thead className="bg-gray-50 text-gray-800 font-semibold border-b border-gray-200">
                 <tr>
+                  <th className="px-3 py-3 text-center w-14">ลำดับ</th>
                   <th className="px-4 py-3">รหัสสินค้า</th>
                   <th className="px-4 py-3">ชื่อสินค้า</th>
                   <th className="px-4 py-3">หน่วย</th>
@@ -2000,22 +2098,65 @@ export default function InventoryMasterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {tableData.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-gray-50/80">
-                    <td className="px-4 py-2.5 font-bold text-blue-700 font-mono">{item.itemCode}</td>
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
-                    <td className="px-4 py-2.5">{item.unit || "-"}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.rawQty)}</td>
-                    <td className="px-4 py-2.5 text-right font-bold text-purple-700 bg-purple-50/50 font-mono">
-                      {formatNum(item.adjustedQty, 2)}
+                {loadingData ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <RefreshCw className="mx-auto h-6 w-6 animate-spin text-blue-600 mb-2" />
+                      กำลังโหลดข้อมูล...
                     </td>
-                    <td className="px-4 py-2.5 text-right">{formatNum(item.saleAmount, 2)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.costAmount, 2)}</td>
-                    <td className="px-4 py-2.5 text-xs text-gray-400">{item.batch?.fileName || "-"}</td>
                   </tr>
-                ))}
+                ) : tableData.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <Package className="mx-auto h-8 w-8 text-gray-300 mb-2" />
+                      ไม่พบข้อมูล
+                    </td>
+                  </tr>
+                ) : (
+                  tableData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-gray-50/80">
+                      <td className="px-3 py-2.5 text-center font-mono text-gray-400">
+                        {(currentPage - 1) * 50 + idx + 1}
+                      </td>
+                      <td className="px-4 py-2.5 font-bold text-blue-700 font-mono">{item.itemCode}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
+                      <td className="px-4 py-2.5">{item.unit || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.rawQty)}</td>
+                      <td className="px-4 py-2.5 text-right font-bold text-purple-700 bg-purple-50/50 font-mono">
+                        {formatNum(item.adjustedQty, 2)}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">{formatNum(item.saleAmount, 2)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.costAmount, 2)}</td>
+                      <td className="px-4 py-2.5 text-xs text-gray-400">{item.batch?.fileName || "-"}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between border-t border-gray-200 px-4 py-3 bg-gray-50 text-xs text-gray-600">
+              <div>
+                แสดงหน้า <b>{currentPage}</b> จาก <b>{totalPages}</b> (ทั้งหมด{" "}
+                <b>{formatNum(totalCount)}</b> รายการ)
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1 || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ก่อนหน้า
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ถัดไป
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -2030,7 +2171,10 @@ export default function InventoryMasterPage() {
                 type="text"
                 placeholder="ค้นหาข้อมูลปริมาณการใช้, หมวด, บริษัท..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => {
+                  setSearchTerm(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
               />
             </div>
@@ -2057,6 +2201,7 @@ export default function InventoryMasterPage() {
             <table className="w-full text-left text-xs text-gray-600">
               <thead className="bg-amber-50 text-amber-950 font-semibold border-b border-amber-200">
                 <tr>
+                  <th className="px-3 py-3 text-center w-14">ลำดับ</th>
                   <th className="px-4 py-3">รหัสสินค้า</th>
                   <th className="px-4 py-3">ชื่อสินค้า</th>
                   <th className="px-4 py-3">หน่วย</th>
@@ -2068,22 +2213,65 @@ export default function InventoryMasterPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200">
-                {tableData.map((item, idx) => (
-                  <tr key={idx} className="hover:bg-amber-50/20">
-                    <td className="px-4 py-2.5 font-bold text-amber-900 font-mono">{item.itemCode}</td>
-                    <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
-                    <td className="px-4 py-2.5">{item.unit || "-"}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.usageMonth1, 1)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.usageMonth2, 1)}</td>
-                    <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.usageMonth3, 2)}</td>
-                    <td className="px-4 py-2.5 font-medium text-gray-700">
-                      <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px]">{item.category || "-"}</span>
+                {loadingData ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-amber-900/60">
+                      <RefreshCw className="mx-auto h-6 w-6 animate-spin text-amber-600 mb-2" />
+                      กำลังโหลดข้อมูล...
                     </td>
-                    <td className="px-4 py-2.5 text-gray-600 max-w-[250px] truncate">{item.supplier || "-"}</td>
                   </tr>
-                ))}
+                ) : tableData.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-4 py-12 text-center text-gray-500">
+                      <Package className="mx-auto h-8 w-8 text-gray-300 mb-2" />
+                      ไม่พบข้อมูล
+                    </td>
+                  </tr>
+                ) : (
+                  tableData.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-amber-50/20">
+                      <td className="px-3 py-2.5 text-center font-mono text-amber-900/50">
+                        {(currentPage - 1) * 50 + idx + 1}
+                      </td>
+                      <td className="px-4 py-2.5 font-bold text-amber-900 font-mono">{item.itemCode}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-900">{item.itemName || "-"}</td>
+                      <td className="px-4 py-2.5">{item.unit || "-"}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.usageMonth1, 1)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.usageMonth2, 1)}</td>
+                      <td className="px-4 py-2.5 text-right font-mono">{formatNum(item.usageMonth3, 2)}</td>
+                      <td className="px-4 py-2.5 font-medium text-gray-700">
+                        <span className="rounded bg-gray-100 px-2 py-0.5 text-[11px]">{item.category || "-"}</span>
+                      </td>
+                      <td className="px-4 py-2.5 text-gray-600 max-w-[250px] truncate">{item.supplier || "-"}</td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
+
+            {/* Pagination */}
+            <div className="flex items-center justify-between border-t border-amber-200/60 px-4 py-3 bg-amber-50/40 text-xs text-gray-600">
+              <div>
+                แสดงหน้า <b>{currentPage}</b> จาก <b>{totalPages}</b> (ทั้งหมด{" "}
+                <b>{formatNum(totalCount)}</b> รายการ)
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                  disabled={currentPage <= 1 || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ก่อนหน้า
+                </button>
+                <button
+                  onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={currentPage >= totalPages || loadingData}
+                  className="rounded-lg border border-gray-300 px-3 py-1.5 hover:bg-white disabled:opacity-40"
+                >
+                  ถัดไป
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

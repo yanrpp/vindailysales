@@ -92,8 +92,9 @@ export async function GET(req: NextRequest) {
       });
 
       return NextResponse.json({
-        items: items.map((item) => ({
+        items: items.map((item, idx) => ({
           ...item,
+          seq: (skip || 0) + idx + 1,
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
@@ -127,8 +128,9 @@ export async function GET(req: NextRequest) {
       });
 
       return NextResponse.json({
-        items: items.map((item) => ({
+        items: items.map((item, idx) => ({
           ...item,
+          seq: (skip || 0) + idx + 1,
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
@@ -162,8 +164,9 @@ export async function GET(req: NextRequest) {
       });
 
       return NextResponse.json({
-        items: items.map((item) => ({
+        items: items.map((item, idx) => ({
           ...item,
+          seq: (skip || 0) + idx + 1,
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
@@ -199,8 +202,9 @@ export async function GET(req: NextRequest) {
       });
 
       return NextResponse.json({
-        items: items.map((item) => ({
+        items: items.map((item, idx) => ({
           ...item,
+          seq: (skip || 0) + idx + 1,
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
           category: item.category ? fixThaiEncoding(item.category) : null,
