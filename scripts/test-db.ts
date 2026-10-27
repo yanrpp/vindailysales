@@ -1,31 +1,28 @@
 import { prisma } from "../lib/prisma";
+import bcrypt from "bcryptjs";
 
 async function main() {
   try {
-    const updated = await prisma.importBatch.updateMany({
-      where: { period: null },
-      data: { period: "2026-10" },
+    const user = await prisma.user.findUnique({
+      where: { username: "yan" },
     });
-    await prisma.inventoryBalance.updateMany({
-      where: { period: null },
-      data: { period: "2026-10" },
-    });
-    await prisma.inventoryDispense.updateMany({
-      where: { period: null },
-      data: { period: "2026-10" },
-    });
-    await prisma.inventorySale.updateMany({
-      where: { period: null },
-      data: { period: "2026-10" },
-    });
-    await prisma.inventoryUsage.updateMany({
-      where: { period: null },
-      data: { period: "2026-10" },
-    });
-    console.log("✅ Backfill completed! Updated batches:", updated.count);
+    if (!user) {
+      console.log("❌ User yan not found");
+      return;
+    }
 
-    const batches = await prisma.importBatch.findMany();
-    console.log("Current Batches:", JSON.stringify(batches, null, 2));
+    const inputPwd = "14641";
+    const isMatch = await bcrypt.compare(inputPwd, user.passwordHash);
+    console.log("Is 14641 the existing password?:", isMatch);
+
+    // อัปเดตรหัสผ่านใหม่ของ user yan ให้เป็น 14641 อย่างแน่นอน
+    const newHash = await bcrypt.hash(inputPwd, 10);
+    await prisma.user.update({
+      where: { username: "yan" },
+      data: { passwordHash: newHash },
+    });
+
+    console.log("✅ Updated password for user 'yan' to: 14641 successfully!");
   } catch (err: any) {
     console.error("❌ Error:", err.message);
   } finally {

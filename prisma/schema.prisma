@@ -242,6 +242,8 @@ model InventoryUsage {
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col D
+  balanceQty  Float?       @map("balance_qty") // ยอดคงเหลือจาก Sheet เหลือ (Col E)
+  minQty      Float?       @map("min_qty")     // จุดสั่งซื้อ MIN จาก Sheet เหลือ (Col F)
   usageMonth1 Float?       @map("usage_month_1") // ปริมาณการใช้ 6
   usageMonth2 Float?       @map("usage_month_2") // ปริมาณการใช้ 7
   usageMonth3 Float?       @map("usage_month_3") // ปริมาณการใช้ 8

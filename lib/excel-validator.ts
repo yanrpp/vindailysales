@@ -43,6 +43,8 @@ export interface UsageItemParsed {
   itemCode: string;
   itemName: string | null;
   unit: string | null;
+  balanceQty?: number | null; // จำนวนคงเหลือ (Col E จาก Sheet เหลือ)
+  minQty?: number | null;     // จุดสั่งซื้อ MIN (Col F จาก Sheet เหลือ)
   usageMonth1: number | null; // เดือน 6
   usageMonth2: number | null; // เดือน 7
   usageMonth3: number | null; // เดือน 8
@@ -149,8 +151,21 @@ export function parseAndValidateBalance(buffer: Buffer | ArrayBuffer): Validatio
   const allSheetNames = wb.SheetNames.map(fixThaiEncoding);
   const hasDailySaleSheet = allSheetNames.some((s) => s.toLowerCase().includes("daily sale"));
   
-  // ตรวจสอบ Sheet แรก
-  const rawTargetSheetName = wb.SheetNames[0];
+  // ตรวจสอบ Sheet ที่ตรงกับคงเหลือ
+  const sheetNames = wb.SheetNames;
+  let rawTargetSheetName = sheetNames.find((s) => {
+    const fixed = fixThaiEncoding(s).trim();
+    return (
+      fixed === "กู้คืน_Sheet1" ||
+      fixed.includes("SKBALANCE") ||
+      fixed.includes("คงเหลือ") ||
+      fixed === "เหลือ" ||
+      fixed === "Sheet1"
+    );
+  });
+  if (!rawTargetSheetName) {
+    rawTargetSheetName = wb.SheetNames[0];
+  }
   const targetSheetName = fixThaiEncoding(rawTargetSheetName);
   if (!rawTargetSheetName || !wb.Sheets[rawTargetSheetName]) {
     return {
@@ -249,8 +264,11 @@ export function parseAndValidateBalance(buffer: Buffer | ArrayBuffer): Validatio
     if (!row || row.length === 0) continue;
 
     const colB = fixThaiEncoding(row[1]);
+    const isSheetLuea = targetSheetName === "เหลือ";
     const colE_raw = row[4] !== undefined && row[4] !== null && row[4] !== "" ? Number(row[4]) : null;
-    const colH_raw = row[7] !== undefined && row[7] !== null && row[7] !== "" ? Number(row[7]) : null;
+    const colMinRaw = isSheetLuea
+      ? (row[5] !== undefined && row[5] !== null && row[5] !== "" ? Number(row[5]) : null)
+      : (row[7] !== undefined && row[7] !== null && row[7] !== "" ? Number(row[7]) : null);
 
     // ข้ามแถว Header หรือผลรวม
     if (
@@ -265,10 +283,10 @@ export function parseAndValidateBalance(buffer: Buffer | ArrayBuffer): Validatio
     }
 
     const hasE = colE_raw !== null && !isNaN(colE_raw);
-    const hasH = colH_raw !== null && !isNaN(colH_raw);
+    const hasMin = colMinRaw !== null && !isNaN(colMinRaw);
 
-    // เงื่อนไข: เอาเฉพาะแถวที่มีข้อมูลใน คอลัมน์ E หรือ คอลัมน์ H
-    if (!hasE && !hasH) {
+    // เงื่อนไข: เอาเฉพาะแถวที่มีข้อมูลใน คอลัมน์จำนวนคงเหลือ หรือ คอลัมน์ Min
+    if (!hasE && !hasMin) {
       skippedRows++;
       continue;
     }
@@ -277,9 +295,9 @@ export function parseAndValidateBalance(buffer: Buffer | ArrayBuffer): Validatio
     const itemName = row[2] !== undefined && row[2] !== null ? fixThaiEncoding(row[2]) : null;
     const unit = row[3] !== undefined && row[3] !== null ? fixThaiEncoding(row[3]) : null;
     const balanceQty = hasE ? colE_raw : null;
-    const minQty = hasH ? colH_raw : null;
-    const unitPrice = row[5] !== undefined && !isNaN(Number(row[5])) ? Number(row[5]) : null;
-    const totalCost = row[6] !== undefined && !isNaN(Number(row[6])) ? Number(row[6]) : null;
+    const minQty = hasMin ? colMinRaw : null;
+    const unitPrice = !isSheetLuea && row[5] !== undefined && !isNaN(Number(row[5])) ? Number(row[5]) : null;
+    const totalCost = !isSheetLuea && row[6] !== undefined && !isNaN(Number(row[6])) ? Number(row[6]) : null;
 
     const item: BalanceItemParsed = {
       itemCode,
@@ -754,21 +772,25 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
     };
   }
 
-  // หา Sheet 'ปริมาณการใช้' หรือ Sheet 'เหลือ' หรือ Sheet แรกที่เข้าข่าย
+  // หา Sheet 'เหลือ' เป็นอันดับแรก เพราะมีข้อมูลสมบูรณ์ที่สุด (คงเหลือ, MIN, ยอดใช้ 3 เดือน, MAX, AVG, หมวด, บริษัท)
   const sheetNames = wb.SheetNames;
   let targetSheetNameRaw = sheetNames.find((s) => {
-    const fixed = fixThaiEncoding(s);
-    return fixed === "ปริมาณการใช้" || fixed.includes("ปริมาณการใช้");
+    const fixed = fixThaiEncoding(s).trim();
+    return fixed === "เหลือ";
   });
-
-  let isUsageSheet = true;
 
   if (!targetSheetNameRaw) {
     targetSheetNameRaw = sheetNames.find((s) => {
-      const fixed = fixThaiEncoding(s);
-      return fixed === "เหลือ" || fixed === "สั่ง";
+      const fixed = fixThaiEncoding(s).trim();
+      return fixed === "ปริมาณการใช้" || fixed.includes("ปริมาณการใช้");
     });
-    isUsageSheet = false;
+  }
+
+  if (!targetSheetNameRaw) {
+    targetSheetNameRaw = sheetNames.find((s) => {
+      const fixed = fixThaiEncoding(s).trim();
+      return fixed === "สั่ง" || fixed === "Sheet1";
+    });
   }
 
   if (!targetSheetNameRaw) {
@@ -818,13 +840,15 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
 
     let itemName = row[2] !== undefined && row[2] !== null ? fixThaiEncoding(row[2]) : null;
     let unit = row[3] !== undefined && row[3] !== null ? fixThaiEncoding(row[3]) : null;
+    let balanceQty: number | null = null;
+    let minQty: number | null = null;
     let m1: number | null = null;
     let m2: number | null = null;
     let m3: number | null = null;
     let category: string | null = null;
     let supplier: string | null = null;
 
-    if (targetSheetName === "ปริมาณการใช้" || row.length <= 10) {
+    if (targetSheetName === "ปริมาณการใช้" || (targetSheetName !== "เหลือ" && row.length <= 10)) {
       // โครงสร้าง Sheet ปริมาณการใช้:
       // Col B: รหัส, Col C: รายการ, Col D: หน่วย, Col E: 6, Col F: 7, Col G: 8, Col H: หมวด, Col I: บริษัท
       m1 = row[4] !== undefined && row[4] !== null && row[4] !== "" ? Number(row[4]) : null;
@@ -834,12 +858,26 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
       supplier = row[8] !== undefined && row[8] !== null ? fixThaiEncoding(row[8]) : null;
     } else {
       // โครงสร้าง Sheet เหลือ หรือ สั่ง:
-      // Col B: รหัส, Col C: รายการ, Col D: หน่วย, Col G: 6, Col H: 7, Col I: 8, Col P: หมวด, Col Q: บริษัท
+      // Col B: รหัส, Col C: รายการ, Col D: หน่วย
+      // Col E: เหลือ (balanceQty)
+      // Col F: MIN (minQty)
+      // Col G: เดือนแรก, Col H: เดือนสอง, Col I: เดือนสาม
+      // Col P: หมวด, Col Q: บริษัท
+      const colE_raw = row[4] !== undefined && row[4] !== null && row[4] !== "" ? Number(row[4]) : null;
+      const colF_raw = row[5] !== undefined && row[5] !== null && row[5] !== "" ? Number(row[5]) : null;
+      balanceQty = colE_raw !== null && !isNaN(colE_raw) ? colE_raw : null;
+      minQty = colF_raw !== null && !isNaN(colF_raw) ? colF_raw : null;
+
       m1 = row[6] !== undefined && row[6] !== null && row[6] !== "" ? Number(row[6]) : null;
       m2 = row[7] !== undefined && row[7] !== null && row[7] !== "" ? Number(row[7]) : null;
       m3 = row[8] !== undefined && row[8] !== null && row[8] !== "" ? Number(row[8]) : null;
-      category = row[15] !== undefined && row[15] !== null ? fixThaiEncoding(row[15]) : (row[7] ? fixThaiEncoding(row[7]) : null);
-      supplier = row[16] !== undefined && row[16] !== null ? fixThaiEncoding(row[16]) : (row[8] ? fixThaiEncoding(row[8]) : null);
+      if (targetSheetName === "เหลือ") {
+        supplier = row[15] !== undefined && row[15] !== null ? fixThaiEncoding(row[15]) : null;
+        category = null;
+      } else {
+        category = row[15] !== undefined && row[15] !== null ? fixThaiEncoding(row[15]) : null;
+        supplier = row[16] !== undefined && row[16] !== null ? fixThaiEncoding(row[16]) : null;
+      }
     }
 
     // ตรวจจับชื่อบริษัท: ถ้าค่าใน category เป็นชื่อบริษัท (เช่น มีคำว่า บริษัท, หจก, จำกัด) ให้ย้ายไป supplier
@@ -854,9 +892,13 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
         /^[A-Z0-9]{2,}\s{2,}/.test(val.trim())
       );
 
-    if (isCompany(category) && (!supplier || supplier === "-")) {
+    if (isCompany(category) && (!supplier || supplier === "-" || !isCompany(supplier))) {
       supplier = category;
       category = null;
+    }
+
+    if (supplier && !isCompany(supplier) && !isNaN(Number(supplier))) {
+      supplier = "-";
     }
 
     // ถ้ายังไม่มีหมวดหมู่ ให้ค้นหาจากแพทเทิร์นรหัสและชื่อสินค้า
@@ -881,6 +923,8 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
       itemCode: colB,
       itemName,
       unit,
+      balanceQty,
+      minQty,
       usageMonth1: m1 !== null && !isNaN(m1) ? m1 : null,
       usageMonth2: m2 !== null && !isNaN(m2) ? m2 : null,
       usageMonth3: m3 !== null && !isNaN(m3) ? m3 : null,
@@ -898,6 +942,8 @@ export function parseAndValidateUsage(buffer: Buffer | ArrayBuffer): ValidationR
         itemCode: colB,
         itemName: itemName || "-",
         unit: unit || "-",
+        balanceQty: balanceQty !== null && !isNaN(balanceQty) ? balanceQty.toLocaleString() : "-",
+        minQty: minQty !== null && !isNaN(minQty) ? minQty.toLocaleString() : "-",
         usageMonth1: m1 !== null && !isNaN(m1) ? Number(m1.toFixed(2)).toLocaleString() : "-",
         usageMonth2: m2 !== null && !isNaN(m2) ? Number(m2.toFixed(2)).toLocaleString() : "-",
         usageMonth3: m3 !== null && !isNaN(m3) ? Number(m3.toFixed(2)).toLocaleString() : "-",

@@ -256,6 +256,8 @@ export async function GET(req: NextRequest) {
           itemCode: true,
           itemName: true,
           unit: true,
+          balanceQty: true,
+          minQty: true,
           usageMonth1: true,
           usageMonth2: true,
           usageMonth3: true,
@@ -336,8 +338,8 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
         itemCode: key,
         itemName: fixedName,
         unit: fixedUnit,
-        balanceQty: null,
-        minQty: null,
+        balanceQty: u.balanceQty ?? null,
+        minQty: u.minQty ?? null,
         usageMonth1: u.usageMonth1,
         usageMonth2: u.usageMonth2,
         usageMonth3: u.usageMonth3,
@@ -351,7 +353,7 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
       });
     });
 
-    // Step B: เติม Balance & Min จากไฟล์ 1
+    // Step B: เติม Balance & Min จากไฟล์ 1 (อัปเดตยอดคงเหลือจริงล่าสุดของ Store)
     balances.forEach((b) => {
       const key = fixThaiEncoding(b.itemCode).trim();
       const fixedName = b.itemName ? fixThaiEncoding(b.itemName) : null;
@@ -378,8 +380,13 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
       } else {
         const curr = itemMap.get(key);
         if (!curr.category || curr.category === "-") curr.category = inferCategoryByCode(key, fixedName || curr.itemName);
-        curr.balanceQty = (curr.balanceQty || 0) + (b.balanceQty || 0);
-        curr.minQty = b.minQty || curr.minQty;
+        // ไฟล์คงเหลือ (เช่น p271069 / 1.คงเหลือ) เป็นยอดนับจริงล่าสุดของ Store ให้อัปเดตแทนที่
+        if (b.balanceQty !== null && b.balanceQty !== undefined) {
+          curr.balanceQty = b.balanceQty;
+        }
+        if (b.minQty !== null && b.minQty !== undefined) {
+          curr.minQty = b.minQty;
+        }
         if (!curr.itemName && fixedName) curr.itemName = fixedName;
         if (!curr.unit && fixedUnit) curr.unit = fixedUnit;
       }

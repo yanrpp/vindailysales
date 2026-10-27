@@ -1391,23 +1391,23 @@ export default function InventoryMasterPage() {
                       <h3 className="font-bold text-gray-900 text-sm group-hover:text-blue-600">
                         1. ไฟล์คงเหลือ
                       </h3>
-                      <p className="text-[11px] text-gray-500">1.คงเหลือ.xls</p>
+                      <p className="text-[11px] text-gray-500 font-mono">p271069.xls / 1.คงเหลือ.xls</p>
                     </div>
                   </div>
                   <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                    Col B,E,H
+                    Store Stock
                   </span>
                 </div>
 
                 <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
                   <p>• <b>Col B</b>: รหัสสินค้า (ตัวเชื่อม)</p>
-                  <p>• <b>Col E</b>: จำนวนคงเหลือ</p>
+                  <p>• <b>Col E</b>: จำนวนคงเหลือของ Store</p>
                   <p>• <b>Col H</b>: จุดสั่งซื้อ MIN</p>
                 </div>
 
                 <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2 text-xs font-bold text-white group-hover:bg-blue-700 transition-colors shadow-sm">
                   <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก 1.คงเหลือ.xls</span>
+                  <span>เลือก p271069.xls / ไฟล์คงเหลือ</span>
                 </div>
               </div>
 
@@ -1429,7 +1429,7 @@ export default function InventoryMasterPage() {
                       <h3 className="font-bold text-gray-900 text-sm group-hover:text-emerald-600">
                         2. ไฟล์ตัดจ่าย
                       </h3>
-                      <p className="text-[11px] text-gray-500">2.ตัดจ่าย.xls</p>
+                      <p className="text-[11px] text-gray-500 font-mono">ตัดจ่าย P 271069.xls</p>
                     </div>
                   </div>
                   <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
@@ -1445,7 +1445,7 @@ export default function InventoryMasterPage() {
 
                 <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white group-hover:bg-emerald-700 transition-colors shadow-sm">
                   <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก 2.ตัดจ่าย.xls</span>
+                  <span>เลือก ตัดจ่าย P / 2.ตัดจ่าย.xls</span>
                 </div>
               </div>
 
@@ -1467,7 +1467,7 @@ export default function InventoryMasterPage() {
                       <h3 className="font-bold text-gray-900 text-sm group-hover:text-purple-600">
                         3. ไฟล์ขาย
                       </h3>
-                      <p className="text-[11px] text-gray-500">3.ขาย.xls</p>
+                      <p className="text-[11px] text-gray-500 font-mono">ขาย261069.xls / 3.ขาย.xls</p>
                     </div>
                   </div>
                   <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700">
@@ -1483,7 +1483,7 @@ export default function InventoryMasterPage() {
 
                 <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-purple-600 py-2 text-xs font-bold text-white group-hover:bg-purple-700 transition-colors shadow-sm">
                   <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก 3.ขาย.xls</span>
+                  <span>เลือก ขาย / 3.ขาย.xls</span>
                 </div>
               </div>
 
@@ -1505,23 +1505,23 @@ export default function InventoryMasterPage() {
                       <h3 className="font-bold text-gray-900 text-sm group-hover:text-amber-700">
                         4. ปริมาณการใช้
                       </h3>
-                      <p className="text-[11px] text-gray-500">4.ปริมาณการใช้.xls</p>
+                      <p className="text-[11px] text-gray-500 font-mono">ปริมาณการใช้.xls (Sheet เหลือ)</p>
                     </div>
                   </div>
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                    Sheet ปริมาณการใช้
+                    Sheet เหลือ & ปริมาณการใช้
                   </span>
                 </div>
 
                 <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
-                  <p>• <b>เดือน 6, 7, 8</b>: ยอดใช้ 3 เดือน</p>
-                  <p>• <b>หมวดสินค้า</b> & <b>บริษัทคู่ค้า.</b></p>
-                  <p className="text-amber-800 font-bold">➔ ผสานคำนวณ Sheet เหลือ</p>
+                  <p>• <b>Col E, F</b>: ยอดคงเหลือ & จุดสั่งซื้อ MIN</p>
+                  <p>• <b>เดือน 1, 2, 3</b>: ยอดใช้ย้อนหลัง 3 เดือน</p>
+                  <p className="text-amber-800 font-bold">➔ ดึงคงเหลือ + หมวด + บริษัทคู่ค้า</p>
                 </div>
 
                 <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 py-2 text-xs font-bold text-white group-hover:bg-amber-700 transition-colors shadow-sm">
                   <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก 4.ปริมาณการใช้.xls</span>
+                  <span>เลือก ปริมาณการใช้.xls</span>
                 </div>
               </div>
             </div>

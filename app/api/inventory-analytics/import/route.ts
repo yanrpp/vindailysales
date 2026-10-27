@@ -129,6 +129,8 @@ export async function POST(req: NextRequest) {
             itemCode: item.itemCode,
             itemName: item.itemName,
             unit: item.unit,
+            balanceQty: item.balanceQty ?? null,
+            minQty: item.minQty ?? null,
             usageMonth1: item.usageMonth1,
             usageMonth2: item.usageMonth2,
             usageMonth3: item.usageMonth3,
