@@ -349,3 +349,59 @@ model DriveShare {
   @@index([itemId])
   @@map("drive_shares")
 }
+
+
+// 17. Item Type (ประเภทคลัง: 1 = Mainstore, 2 = พัสดุ)
+model ItemType {
+  id          Int               @id // 1 = MAINSTORE, 2 = SUPPLY (พัสดุ)
+  code        String            @unique
+  name        String
+  description String?
+  createdAt   DateTime          @default(now()) @map("created_at")
+  updatedAt   DateTime          @updatedAt @map("updated_at")
+  locations   StorageLocation[]
+  items       LocationItem[]
+
+  @@map("item_types")
+}
+
+// 18. Storage Location (ทะเบียนตำแหน่งจัดเก็บ เช่น 1F1, 1B2)
+model StorageLocation {
+  id          String         @id @default(uuid())
+  name        String
+  itemTypeId  Int            @map("item_type_id")
+  itemType    ItemType       @relation(fields: [itemTypeId], references: [id])
+  description String?
+  isActive    Boolean        @default(true) @map("is_active")
+  sortOrder   Int            @default(0) @map("sort_order")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+  items       LocationItem[]
+
+  @@unique([name, itemTypeId])
+  @@index([itemTypeId, sortOrder])
+  @@map("storage_locations")
+}
+
+// 19. Location Item (รายการสินค้าที่อยู่ในแต่ละ Location ตามลำดับ)
+model LocationItem {
+  id         String          @id @default(uuid())
+  locationId String          @map("location_id")
+  location   StorageLocation @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  itemTypeId Int             @map("item_type_id")
+  itemType   ItemType        @relation(fields: [itemTypeId], references: [id])
+  seq        Int             @default(0) // ลำดับภายใน Location
+  code       String
+  name       String
+  unit       String?
+  note       String?
+  isActive   Boolean         @default(true) @map("is_active")
+  createdAt  DateTime        @default(now()) @map("created_at")
+  updatedAt  DateTime        @updatedAt @map("updated_at")
+
+  @@unique([locationId, code])
+  @@index([locationId, seq])
+  @@index([code])
+  @@index([itemTypeId])
+  @@map("location_items")
+}
