@@ -1,9 +1,48 @@
 import { prisma } from "@/lib/prisma";
 import { verifyPassword } from "@/lib/auth/auth-utils";
+import { put, del } from "@vercel/blob";
 import fs from "fs/promises";
 import path from "path";
 
 export const LOCAL_STORAGE_DIR = path.join(process.cwd(), "uploads", "drive");
+
+// ตรวจสอบว่ามีการเชื่อมต่อ Vercel Blob Token หรือไม่
+export function isVercelBlobConfigured(): boolean {
+  return Boolean(process.env.BLOB_READ_WRITE_TOKEN);
+}
+
+// อัปโหลดไฟล์ไปยัง Vercel Blob Storage (รองรับฟรี 500 GB บน Vercel Pro)
+export async function uploadToVercelBlob(
+  filename: string,
+  buffer: Buffer,
+  mimeType?: string
+): Promise<{ url: string; downloadUrl?: string } | null> {
+  try {
+    const safeName = filename.replace(/[^a-zA-Z0-9._-\u0E00-\u0E7F]/g, "_");
+    const pathname = `drive/${Date.now()}_${safeName}`;
+    const blob = await put(pathname, buffer, {
+      access: "public",
+      contentType: mimeType || "application/octet-stream",
+    });
+    return {
+      url: blob.url,
+      downloadUrl: blob.downloadUrl,
+    };
+  } catch (error) {
+    console.error("Vercel Blob upload error:", error);
+    return null;
+  }
+}
+
+// ลบไฟล์ออกจาก Vercel Blob Storage
+export async function deleteFromVercelBlob(blobUrl?: string | null) {
+  if (!blobUrl || !blobUrl.startsWith("http")) return;
+  try {
+    await del(blobUrl);
+  } catch (error) {
+    console.warn("Failed to delete from Vercel Blob:", error);
+  }
+}
 
 // ตรวจสอบและสร้างโฟลเดอร์สำรองบน Local Disk
 export async function ensureLocalStorageDir() {
@@ -40,8 +79,26 @@ export async function deleteLocalDiskBackup(localPath?: string | null) {
   }
 }
 
-// อ่านข้อมูลไฟล์ (ดึงจาก PostgreSQL Blob ก่อน และหากไม่มีให้ดึงจาก Local Disk สำรอง)
-export async function readDriveFileBuffer(itemId: string, localPath?: string | null): Promise<Buffer | null> {
+// อ่านข้อมูลไฟล์ (ดึงจาก Vercel Blob CDN ก่อน, หากไม่มีให้ดึงจาก PostgreSQL Blob หรือ Local Disk สำรอง)
+export async function readDriveFileBuffer(
+  itemId: string,
+  localPath?: string | null,
+  blobUrl?: string | null
+): Promise<Buffer | null> {
+  // 1. ถ้ามี Vercel Blob URL ให้ดาวน์โหลดตรงจาก CDN
+  if (blobUrl && blobUrl.startsWith("http")) {
+    try {
+      const res = await fetch(blobUrl);
+      if (res.ok) {
+        const arrayBuf = await res.arrayBuffer();
+        return Buffer.from(arrayBuf);
+      }
+    } catch (err) {
+      console.warn("Failed to fetch buffer from Vercel Blob URL, falling back to DB/Local:", err);
+    }
+  }
+
+  // 2. ถ้ามีใน PostgreSQL (ไฟล์เก่าที่เคยบันทึกไว้ใน DB)
   const blobRecord = await prisma.driveFileBlob.findUnique({
     where: { itemId },
   });
@@ -50,6 +107,7 @@ export async function readDriveFileBuffer(itemId: string, localPath?: string | n
     return Buffer.from(blobRecord.data);
   }
 
+  // 3. ถ้ามีใน Local Disk
   if (localPath) {
     try {
       return await fs.readFile(localPath);

@@ -1,7 +1,14 @@
 import { NextResponse } from "next/server";
 import { requireAuth, AuthRequest } from "@/lib/auth/middleware";
 import { prisma } from "@/lib/prisma";
-import { getFolderBreadcrumbs, saveBackupToLocalDisk } from "@/lib/drive-utils";
+import {
+  getFolderBreadcrumbs,
+  saveBackupToLocalDisk,
+  deleteLocalDiskBackup,
+  isVercelBlobConfigured,
+  uploadToVercelBlob,
+  deleteFromVercelBlob,
+} from "@/lib/drive-utils";
 import crypto from "crypto";
 
 // GET /api/drive - ดึงรายการไฟล์และโฟลเดอร์ตามหมวดหมู่ (My Drive, Shared with me, Shared by me, Starred, Trash, Recent)
@@ -33,7 +40,8 @@ export const GET = requireAuth(async (req: AuthRequest) => {
 
     const usedBytes = storageAgg._sum.size || 0;
     const totalFilesCount = storageAgg._count.id || 0;
-    const quotaBytes = 500 * 1024 * 1024; // 500 MB default quota per user
+    // โควต้าพื้นที่จัดเก็บ: รองรับ Vercel Pro (Vercel Blob 500 GB) กำหนดให้ 10 GB ต่อผู้ใช้
+    const quotaBytes = 10 * 1024 * 1024 * 1024; // 10 GB quota per user
 
     // สร้างเงื่อนไขการกรองประเภทไฟล์
     const buildMimeFilter = () => {
@@ -299,13 +307,13 @@ export const POST = requireAuth(async (req: AuthRequest) => {
         );
       }
 
-      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB per file
+      const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100 MB per file (รองรับไฟล์ขนาดใหญ่ผ่าน Vercel Blob)
       const createdItems = [];
 
       for (const file of files) {
         if (file.size > MAX_FILE_SIZE) {
           return NextResponse.json(
-            { error: `ไฟล์ "${file.name}" มีขนาดเกิน 50 MB` },
+            { error: `ไฟล์ "${file.name}" มีขนาดเกิน 100 MB` },
             { status: 400 }
           );
         }
@@ -317,10 +325,22 @@ export const POST = requireAuth(async (req: AuthRequest) => {
           : "";
 
         const newItemId = crypto.randomUUID();
-        // บันทึกสำรองลง Local Disk (ถ้าทำได้)
+        let storageType: "BLOB" | "DB" | "LOCAL" = "DB";
+        let blobUrl: string | null = null;
+
+        // 1. จัดเก็บลง Vercel Blob Storage ก่อนเป็นอันดับแรก (พื้นที่ฟรี 500 GB บน Vercel Pro และโหลดเร็วผ่าน CDN)
+        if (isVercelBlobConfigured()) {
+          const blobRes = await uploadToVercelBlob(file.name, buffer, file.type);
+          if (blobRes && blobRes.url) {
+            storageType = "BLOB";
+            blobUrl = blobRes.url;
+          }
+        }
+
+        // 2. สำรองลง Local Disk (หากอยู่ในเครื่อง Localhost)
         const localPath = await saveBackupToLocalDisk(newItemId, file.name, buffer);
 
-        // บันทึกลง PostgreSQL (ทั้ง Metadata และ File Blob)
+        // 3. บันทึก Metadata ลง PostgreSQL (หากบันทึกบน Vercel Blob แล้ว จะไม่สร้าง DriveFileBlob ใน DB เพื่อประหยัดพื้นที่ฐานข้อมูล)
         const item = await prisma.driveItem.create({
           data: {
             id: newItemId,
@@ -332,13 +352,18 @@ export const POST = requireAuth(async (req: AuthRequest) => {
             description,
             parentId,
             ownerId: userId,
-            storageType: "DB",
+            storageType,
             localPath,
-            blob: {
-              create: {
-                data: buffer,
-              },
-            },
+            blobUrl,
+            ...(storageType !== "BLOB"
+              ? {
+                  blob: {
+                    create: {
+                      data: buffer,
+                    },
+                  },
+                }
+              : {}),
             ...(shareWithUserId
               ? {
                   shares: {
@@ -393,6 +418,19 @@ export const DELETE = requireAuth(async (req: AuthRequest) => {
     const action = searchParams.get("action");
 
     if (action === "empty-trash") {
+      const trashedItems = await prisma.driveItem.findMany({
+        where: {
+          ownerId: userId,
+          isTrashed: true,
+        },
+        select: { id: true, localPath: true, blobUrl: true },
+      });
+
+      for (const item of trashedItems) {
+        if (item.localPath) await deleteLocalDiskBackup(item.localPath);
+        if (item.blobUrl) await deleteFromVercelBlob(item.blobUrl);
+      }
+
       const deleted = await prisma.driveItem.deleteMany({
         where: {
           ownerId: userId,

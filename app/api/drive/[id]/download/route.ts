@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getTokenFromRequest } from "@/lib/auth/auth-utils";
 import { checkItemPermission, readDriveFileBuffer } from "@/lib/drive-utils";
+import { fixThaiEncoding } from "@/lib/excel-validator";
 import * as XLSX from "xlsx";
 
 // GET /api/drive/[id]/download - ดาวน์โหลดหรือพรีวิวไฟล์ (รองรับ Image, PDF, Text, Excel Preview JSON)
@@ -53,7 +54,7 @@ export async function GET(
       );
     }
 
-    const buffer = await readDriveFileBuffer(item.id, item.localPath);
+    const buffer = await readDriveFileBuffer(item.id, item.localPath, item.blobUrl);
     if (!buffer) {
       return NextResponse.json(
         { error: "ไม่พบข้อมูลเนื้อหาไฟล์ในระบบจัดเก็บข้อมูล" },
@@ -64,17 +65,27 @@ export async function GET(
     // กรณีขอพรีวิวไฟล์ Excel / CSV เป็น JSON ตาราง
     if (format === "excel-json") {
       try {
-        const workbook = XLSX.read(buffer, { type: "buffer" });
+        const workbook = XLSX.read(buffer, { type: "buffer", codepage: 874 });
         const sheets = workbook.SheetNames.map((sheetName) => {
           const worksheet = workbook.Sheets[sheetName];
-          const rows = XLSX.utils.sheet_to_json<any[]>(worksheet, {
+          const rawRows = XLSX.utils.sheet_to_json<any[]>(worksheet, {
             header: 1,
             defval: "",
           });
+          // แก้ไขการถอดรหัสภาษาไทย (Windows-874 / TIS-620 Mojibake)
+          const rows = rawRows.slice(0, 150).map((row) =>
+            Array.isArray(row)
+              ? row.map((cell) => {
+                  if (cell === null || cell === undefined) return "";
+                  if (typeof cell === "string") return fixThaiEncoding(cell);
+                  return cell;
+                })
+              : row
+          );
           return {
-            name: sheetName,
-            rows: rows.slice(0, 150), // แสดงพรีวิวสูงสุด 150 แถวแรกต่อชีต
-            totalRows: rows.length,
+            name: fixThaiEncoding(sheetName),
+            rows, // แสดงพรีวิวสูงสุด 150 แถวแรกต่อชีต
+            totalRows: rawRows.length,
           };
         });
         return NextResponse.json({
@@ -91,7 +102,8 @@ export async function GET(
 
     // กรณีขอพรีวิวไฟล์ข้อความ (Text / JSON / CSV / MD)
     if (format === "text") {
-      const textContent = buffer.toString("utf-8").slice(0, 200000);
+      let textContent = buffer.toString("utf-8").slice(0, 200000);
+      textContent = fixThaiEncoding(textContent);
       return NextResponse.json({
         success: true,
         text: textContent,

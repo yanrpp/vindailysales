@@ -90,6 +90,8 @@ interface DriveItem {
   shareExpiresAt: string | null;
   allowDownload: boolean;
   color: string | null;
+  storageType?: string;
+  blobUrl?: string | null;
   createdAt: string;
   updatedAt: string;
   shares: DriveShareRecord[];
@@ -201,6 +203,33 @@ export default function DrivePage() {
 
   // Detail Drawer State
   const [detailItem, setDetailItem] = useState<DriveItem | null>(null);
+
+  // Modern Non-blocking Confirmation Dialog State (แก้ปัญหา INP จาก window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    description: string;
+    confirmText?: string;
+    variant?: "destructive" | "default";
+    onConfirm: () => Promise<void> | void;
+  } | null>(null);
+
+  const askConfirmation = (options: {
+    title: string;
+    description: string;
+    confirmText?: string;
+    variant?: "destructive" | "default";
+    onConfirm: () => Promise<void> | void;
+  }) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: options.title,
+      description: options.description,
+      confirmText: options.confirmText || "ยืนยัน",
+      variant: options.variant || "destructive",
+      onConfirm: options.onConfirm,
+    });
+  };
 
   const showToast = (text: string, type: "success" | "error" = "success") => {
     setToastMsg({ text, type });
@@ -429,42 +458,56 @@ export default function DrivePage() {
     }
   };
 
-  // ลบถาวร
-  const handlePermanentDelete = async (item: DriveItem) => {
-    if (!confirm(`ยืนยันการลบถาวร "${item.name}"? ข้อมูลนี้จะไม่สามารถกู้คืนได้อีก`)) return;
-    try {
-      const res = await fetch(`/api/drive/${item.id}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (res.ok) {
-        showToast(`ลบ "${item.name}" ถาวรเรียบร้อยแล้ว`);
-        fetchDriveItems();
-      } else {
-        const data = await res.json();
-        showToast(data.error || "ไม่สามารถลบได้", "error");
-      }
-    } catch {
-      showToast("เกิดข้อผิดพลาดในการลบไฟล์", "error");
-    }
+  // ลบถาวร (ใช้ non-blocking modal แทน window.confirm)
+  const handlePermanentDelete = (item: DriveItem) => {
+    askConfirmation({
+      title: "ยืนยันการลบถาวร",
+      description: `คุณแน่ใจหรือไม่ว่าต้องการลบถาวร "${item.name}"? ข้อมูลนี้จะไม่สามารถกู้คืนได้อีก`,
+      confirmText: "ลบถาวร",
+      variant: "destructive",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/drive/${item.id}`, {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (res.ok) {
+            showToast(`ลบ "${item.name}" ถาวรเรียบร้อยแล้ว`);
+            fetchDriveItems();
+          } else {
+            const data = await res.json();
+            showToast(data.error || "ไม่สามารถลบได้", "error");
+          }
+        } catch {
+          showToast("เกิดข้อผิดพลาดในการลบไฟล์", "error");
+        }
+      },
+    });
   };
 
-  // ล้างถังขยะทั้งหมด
-  const handleEmptyTrash = async () => {
-    if (!confirm("คุณแน่ใจหรือไม่ว่าต้องการล้างถังขยะทั้งหมดแบบถาวร?")) return;
-    try {
-      const res = await fetch("/api/drive?action=empty-trash", {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        showToast("ล้างถังขยะเรียบร้อยแล้ว");
-        fetchDriveItems();
-      }
-    } catch {
-      showToast("ไม่สามารถล้างถังขยะได้", "error");
-    }
+  // ล้างถังขยะทั้งหมด (ใช้ non-blocking modal แทน window.confirm เพื่อแก้ปัญหา INP 1,141ms)
+  const handleEmptyTrash = () => {
+    askConfirmation({
+      title: "ยืนยันการล้างถังขยะทั้งหมด",
+      description: "คุณแน่ใจหรือไม่ว่าต้องการล้างถังขยะทั้งหมดแบบถาวร? ข้อมูลไฟล์ทั้งหมดในถังขยะจะถูกลบอย่างถาวรและไม่สามารถกู้คืนได้อีก",
+      confirmText: "ล้างถังขยะทั้งหมด",
+      variant: "destructive",
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/drive?action=empty-trash", {
+            method: "DELETE",
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            showToast("ล้างถังขยะเรียบร้อยแล้ว");
+            fetchDriveItems();
+          }
+        } catch {
+          showToast("ไม่สามารถล้างถังขยะได้", "error");
+        }
+      },
+    });
   };
 
   // แก้ไขชื่อและรายละเอียด
@@ -2266,6 +2309,51 @@ export default function DrivePage() {
               </div>
             </>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Confirmation Dialog (Non-blocking modern modal to prevent INP issues) */}
+      <Dialog
+        open={Boolean(confirmDialog?.isOpen)}
+        onOpenChange={(open) => {
+          if (!open) setConfirmDialog(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-slate-800">
+              <AlertCircle className="h-5 w-5 text-red-500" />
+              {confirmDialog?.title || "ยืนยันการทำรายการ"}
+            </DialogTitle>
+            <DialogDescription className="text-sm text-slate-600 mt-2">
+              {confirmDialog?.description}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-end gap-2.5 mt-5">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmDialog(null)}
+              className="text-slate-600"
+            >
+              ยกเลิก
+            </Button>
+            <Button
+              type="button"
+              variant={confirmDialog?.variant || "destructive"}
+              size="sm"
+              onClick={async () => {
+                const action = confirmDialog?.onConfirm;
+                setConfirmDialog(null);
+                if (action) await action();
+              }}
+              className="gap-1.5"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+              {confirmDialog?.confirmText || "ยืนยัน"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

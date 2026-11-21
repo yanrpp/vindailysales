@@ -301,8 +301,9 @@ model DriveItem {
   sharePassword   String?        @map("share_password")
   shareExpiresAt  DateTime?      @map("share_expires_at")
   allowDownload   Boolean        @default(true) @map("allow_download")
-  storageType     String         @default("DB") @map("storage_type") // "DB" | "LOCAL"
+  storageType     String         @default("DB") @map("storage_type") // "DB" | "LOCAL" | "BLOB"
   localPath       String?        @map("local_path")
+  blobUrl         String?        @map("blob_url")
   color           String?        // สีของโฟลเดอร์
   createdAt       DateTime       @default(now()) @map("created_at")
   updatedAt       DateTime       @updatedAt @map("updated_at")

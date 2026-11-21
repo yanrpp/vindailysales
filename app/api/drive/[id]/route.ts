@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyToken, getTokenFromRequest } from "@/lib/auth/auth-utils";
 import { prisma } from "@/lib/prisma";
-import { checkItemPermission, deleteLocalDiskBackup } from "@/lib/drive-utils";
+import {
+  checkItemPermission,
+  deleteLocalDiskBackup,
+  deleteFromVercelBlob,
+} from "@/lib/drive-utils";
 
 // GET /api/drive/[id] - ดูรายละเอียดไฟล์หรือโฟลเดอร์
 export async function GET(
@@ -151,6 +155,9 @@ export async function DELETE(
 
     if (access.item?.localPath) {
       await deleteLocalDiskBackup(access.item.localPath);
+    }
+    if (access.item?.blobUrl) {
+      await deleteFromVercelBlob(access.item.blobUrl);
     }
 
     await prisma.driveItem.delete({
