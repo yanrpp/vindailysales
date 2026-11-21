@@ -23,6 +23,10 @@ model User {
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 
+  driveItems        DriveItem[]      @relation("OwnedDriveItems")
+  driveSharesToMe   DriveShare[]     @relation("SharedWithUser")
+  driveSharesByMe   DriveShare[]     @relation("SharedByUser")
+
   @@index([role, isActive])
   @@map("users")
 }
@@ -273,4 +277,74 @@ model InventoryPendingDelivery {
   @@index([itemCode])
   @@index([period])
   @@map("inventory_pending_deliveries")
+}
+
+// 14. Drive Item (ระบบจัดการไฟล์และโฟลเดอร์สไตล์ Google Drive)
+model DriveItem {
+  id              String         @id @default(uuid())
+  name            String
+  type            String         @default("FILE") // "FILE" | "FOLDER"
+  mimeType        String?        @map("mime_type")
+  size            Int            @default(0) // bytes
+  extension       String?
+  description     String?
+  parentId        String?        @map("parent_id")
+  parent          DriveItem?     @relation("DriveHierarchy", fields: [parentId], references: [id], onDelete: Cascade)
+  children        DriveItem[]    @relation("DriveHierarchy")
+  ownerId         String         @map("owner_id")
+  owner           User           @relation("OwnedDriveItems", fields: [ownerId], references: [id], onDelete: Cascade)
+  isStarred       Boolean        @default(false) @map("is_starred")
+  isTrashed       Boolean        @default(false) @map("is_trashed")
+  trashedAt       DateTime?      @map("trashed_at")
+  isPublic        Boolean        @default(false) @map("is_public")
+  shareToken      String?        @unique @map("share_token")
+  sharePassword   String?        @map("share_password")
+  shareExpiresAt  DateTime?      @map("share_expires_at")
+  allowDownload   Boolean        @default(true) @map("allow_download")
+  storageType     String         @default("DB") @map("storage_type") // "DB" | "LOCAL"
+  localPath       String?        @map("local_path")
+  color           String?        // สีของโฟลเดอร์
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  blob            DriveFileBlob?
+  shares          DriveShare[]
+
+  @@index([ownerId, isTrashed, parentId])
+  @@index([ownerId, isStarred, isTrashed])
+  @@index([parentId])
+  @@index([shareToken])
+  @@map("drive_items")
+}
+
+// 15. Drive File Blob (เก็บข้อมูลไบนารีของไฟล์ใน PostgreSQL เพื่อให้รันบน Vercel Serverless ได้)
+model DriveFileBlob {
+  id        String    @id @default(uuid())
+  itemId    String    @unique @map("item_id")
+  item      DriveItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  data      Bytes
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@map("drive_file_blobs")
+}
+
+// 16. Drive Share (การแชร์และรับ-ส่งไฟล์ระหว่างผู้ใช้ในระบบ)
+model DriveShare {
+  id               String    @id @default(uuid())
+  itemId           String    @map("item_id")
+  item             DriveItem @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sharedWithUserId String    @map("shared_with_user_id")
+  sharedWithUser   User      @relation("SharedWithUser", fields: [sharedWithUserId], references: [id], onDelete: Cascade)
+  sharedByUserId   String    @map("shared_by_user_id")
+  sharedByUser     User      @relation("SharedByUser", fields: [sharedByUserId], references: [id], onDelete: Cascade)
+  permission       String    @default("VIEW") // "VIEW" | "EDIT"
+  note             String?
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  @@unique([itemId, sharedWithUserId])
+  @@index([sharedWithUserId])
+  @@index([sharedByUserId])
+  @@index([itemId])
+  @@map("drive_shares")
 }

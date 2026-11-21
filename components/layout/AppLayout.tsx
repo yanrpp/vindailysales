@@ -21,7 +21,7 @@ export function AppLayout({ children, title, description }: AppLayoutProps) {
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
-  const isPublicPage = publicPages.includes(pathname);
+  const isPublicPage = publicPages.includes(pathname) || pathname.startsWith("/drive/shared/");
 
   // ตรวจสอบ authentication และ redirect ถ้ายังไม่ได้ login
   useEffect(() => {

@@ -42,3 +42,6 @@ next-env.d.ts
 
 # user data storage (JSON file)
 /data/users.json
+
+# local drive backup uploads
+/uploads/

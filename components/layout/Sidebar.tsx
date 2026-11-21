@@ -6,7 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
-import { UploadCloud, Package, FileText, AlertTriangle, Users, User, Database, ChevronDown, ChevronRight, PackageX, BarChart3 } from "lucide-react";
+import { UploadCloud, Package, FileText, AlertTriangle, Users, User, Database, ChevronDown, ChevronRight, PackageX, BarChart3, HardDrive } from "lucide-react";
 
 interface SubMenuItem {
   href: string;
@@ -37,6 +37,13 @@ const menuItems: MenuItem[] = [
     label: "นำเข้าและวิเคราะห์รายงาน",
     icon: <UploadCloud className="h-5 w-5" />,
     requireAuth: false,
+  },
+  // Cloud Drive & File Sharing Section
+  {
+    href: "/drive",
+    label: "คลังไฟล์ & รับ-ส่งไฟล์",
+    icon: <HardDrive className="h-5 w-5" />,
+    requireAuth: true,
   },
   // Drug Data Section
   {
