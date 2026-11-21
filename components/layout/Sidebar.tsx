@@ -6,7 +6,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
-import { UploadCloud, Package, FileText, AlertTriangle, Users, User, Database, ChevronDown, ChevronRight, PackageX, BarChart3, HardDrive, MapPin } from "lucide-react";
+import { UploadCloud, Package, FileText, AlertTriangle, Users, User, Database, ChevronDown, ChevronRight, PackageX, BarChart3, HardDrive, MapPin, ClipboardList } from "lucide-react";
 
 interface SubMenuItem {
   href: string;
@@ -50,6 +50,12 @@ const menuItems: MenuItem[] = [
     href: "/locations",
     label: "ทะเบียน ITEMSTORE",
     icon: <MapPin className="h-5 w-5" />,
+    requireAuth: true,
+  },
+  {
+    href: "/requisitions",
+    label: "การเบิกหน่วยงานรายวัน",
+    icon: <ClipboardList className="h-5 w-5" />,
     requireAuth: true,
   },
   {

@@ -405,3 +405,46 @@ model LocationItem {
   @@index([itemTypeId])
   @@map("location_items")
 }
+
+
+// 20. Requisition Import Batch (ประวัติการนำเข้าไฟล์การเบิกรายวัน)
+model RequisitionBatch {
+  id         String                  @id @default(uuid())
+  fileName   String                  @map("file_name")
+  dateFrom   DateTime?               @map("date_from")
+  dateTo     DateTime?               @map("date_to")
+  totalRows  Int                     @default(0) @map("total_rows")
+  uploadedBy String?                 @map("uploaded_by")
+  createdAt  DateTime                @default(now()) @map("created_at")
+  records    DepartmentRequisition[]
+
+  @@index([createdAt])
+  @@map("requisition_batches")
+}
+
+// 21. Department Requisition (ข้อมูลการเบิกของแต่ละหน่วยงานรายวัน)
+model DepartmentRequisition {
+  id              String            @id @default(uuid())
+  batchId         String?           @map("batch_id")
+  batch           RequisitionBatch? @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  requisitionNo   String            @map("requisition_no")    // Col B: Reference
+  requestDate     DateTime          @map("request_date")      // Col C: Date (forward-filled)
+  requestDateText String?           @map("request_date_text") // วันที่รูปแบบข้อความต้นฉบับ เช่น 16 พ.ย. 69
+  department      String            @map("department")        // Col D: โรงพยาบาลวิชัยเวชฯ
+  suf             Int?              @map("suf")               // Col E: Suf
+  action          String            @map("action")            // Col F: Act
+  code            String            @map("code")              // Col G: Check List Issue (เชื่อมโยงทะเบียน location_items)
+  description     String?           @map("description")       // Col H: ชื่อสินค้าสำรองกรณีไม่พบในทะเบียน
+  unit            String?           @map("unit")              // Col I: หน่วยสำรองกรณีไม่พบในทะเบียน
+  qtyRequist      Float             @default(0) @map("qty_requist") // Col J: Page -x of x
+  createdAt       DateTime          @default(now()) @map("created_at")
+  updatedAt       DateTime          @updatedAt @map("updated_at")
+
+  @@index([requestDate])
+  @@index([department])
+  @@index([requisitionNo])
+  @@index([action])
+  @@index([code])
+  @@index([requestDate, department])
+  @@map("department_requisitions")
+}
