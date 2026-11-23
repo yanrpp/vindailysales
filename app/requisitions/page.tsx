@@ -4,7 +4,6 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import {
   Dialog,
   DialogContent,
@@ -23,6 +22,7 @@ import {
   Layers,
   Package,
   Trash2,
+  Eye,
   ArrowUp,
   ArrowDown,
   ArrowUpDown,
@@ -43,7 +43,17 @@ import {
   type RequisitionParseResult,
 } from "@/lib/requisition-parser";
 
-interface RequisitionRow {
+interface RequisitionSummaryRow {
+  requisitionNo: string;
+  requestDate: string;
+  requestDateText: string | null;
+  department: string;
+  action: string;
+  itemCount: number;
+  totalQty: number;
+}
+
+interface RequisitionItemRow {
   id: string;
   requisitionNo: string;
   requestDate: string;
@@ -60,6 +70,17 @@ interface RequisitionRow {
   itemTypeId: number | null;
   itemTypeName: string | null;
   inRegistry: boolean;
+}
+
+interface RequisitionDetail {
+  requisitionNo: string;
+  requestDate: string;
+  requestDateText: string | null;
+  department: string;
+  action: string;
+  itemCount: number;
+  totalQty: number;
+  items: RequisitionItemRow[];
 }
 
 interface FilterOption {
@@ -82,9 +103,18 @@ interface BatchRow {
   createdAt: string;
 }
 
-type SortKey = "" | "requestDate" | "requisitionNo" | "department" | "action" | "code" | "qtyRequist";
+type SortKey =
+  | ""
+  | "requestDate"
+  | "requisitionNo"
+  | "department"
+  | "action"
+  | "itemCount"
+  | "totalQty"
+  | "code"
+  | "qtyRequist";
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 20;
 
 const formatThaiDate = (iso: string) => {
   if (!iso) return "-";
@@ -103,7 +133,9 @@ export default function RequisitionsPage() {
   const { token, loading: authLoading } = useAuth();
 
   // ---- data & filters ----
-  const [items, setItems] = useState<RequisitionRow[]>([]);
+  const [viewMode, setViewMode] = useState<"slips" | "items">("slips");
+  const [requisitions, setRequisitions] = useState<RequisitionSummaryRow[]>([]);
+  const [lineItems, setLineItems] = useState<RequisitionItemRow[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
@@ -132,6 +164,11 @@ export default function RequisitionsPage() {
   const [actionOptions, setActionOptions] = useState<FilterOption[]>([]);
   const [dateOptions, setDateOptions] = useState<DateOption[]>([]);
   const [batches, setBatches] = useState<BatchRow[]>([]);
+
+  // ---- detail modal ----
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detail, setDetail] = useState<RequisitionDetail | null>(null);
 
   // ---- modals & toast ----
   const [toast, setToast] = useState<{ text: string; type: "success" | "error" } | null>(null);
@@ -197,7 +234,11 @@ export default function RequisitionsPage() {
     if (!token) return;
     setLoading(true);
     try {
-      const qs = new URLSearchParams({ page: String(page), pageSize: String(PAGE_SIZE) });
+      const qs = new URLSearchParams({
+        view: viewMode,
+        page: String(page),
+        pageSize: String(PAGE_SIZE),
+      });
       if (dateFrom) qs.set("dateFrom", dateFrom);
       if (dateTo) qs.set("dateTo", dateTo);
       if (selectedDeptsKey) qs.set("departments", selectedDeptsKey);
@@ -209,7 +250,11 @@ export default function RequisitionsPage() {
         qs.set("sortOrder", sortOrder);
       }
       const data = await api(`/api/requisitions?${qs}`);
-      setItems(data.items || []);
+      if (viewMode === "items") {
+        setLineItems(data.items || []);
+      } else {
+        setRequisitions(data.requisitions || []);
+      }
       setTotal(data.total || 0);
       if (data.stats) setStats(data.stats);
       if (data.filters) {
@@ -226,6 +271,7 @@ export default function RequisitionsPage() {
   }, [
     api,
     token,
+    viewMode,
     page,
     dateFrom,
     dateTo,
@@ -240,6 +286,23 @@ export default function RequisitionsPage() {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  // เปิดดูรายละเอียดรายการภายในใบเบิก
+  const openRequisitionDetail = async (requisitionNo: string, requestDate: string) => {
+    setDetailOpen(true);
+    setDetailLoading(true);
+    setDetail(null);
+    try {
+      const qs = new URLSearchParams({ requisitionNo, date: requestDate });
+      const data = await api(`/api/requisitions?${qs}`);
+      setDetail(data.detail || null);
+    } catch (e: any) {
+      showToast(e.message, "error");
+      setDetailOpen(false);
+    } finally {
+      setDetailLoading(false);
+    }
+  };
 
   const filteredDeptOptions = useMemo(() => {
     const q = deptSearch.trim().toLowerCase();
@@ -354,15 +417,57 @@ export default function RequisitionsPage() {
   };
 
   // ---- Delete ----
-  const deleteRow = (r: RequisitionRow) =>
+  const deleteRequisitionSlip = (r: RequisitionSummaryRow) =>
     setConfirm({
-      title: "ยืนยันการลบรายการเบิก",
-      description: `ลบรายการ ${r.code} (${r.itemName}) จากใบเบิก ${r.requisitionNo} หน่วยงาน ${r.department}?`,
+      title: `ยืนยันการลบใบเบิก ${r.requisitionNo}`,
+      description: `ลบใบเบิกเลขที่ ${r.requisitionNo} (${r.department}) ทั้งหมด ${r.itemCount} รายการ?`,
       onConfirm: async () => {
         try {
-          await api(`/api/requisitions?id=${r.id}`, { method: "DELETE" });
+          const qs = new URLSearchParams({ requisitionNo: r.requisitionNo, date: r.requestDate });
+          const data = await api(`/api/requisitions?${qs}`, { method: "DELETE" });
+          showToast(`ลบใบเบิก ${r.requisitionNo} (${data.deleted} รายการ) แล้ว`);
+          loadData();
+        } catch (e: any) {
+          showToast(e.message, "error");
+        }
+      },
+    });
+
+  const deleteLineItem = (item: RequisitionItemRow) =>
+    setConfirm({
+      title: "ยืนยันการลบรายการเบิก",
+      description: `ลบ ${item.code} (${item.itemName}) ออกจากใบเบิก ${item.requisitionNo}?`,
+      onConfirm: async () => {
+        try {
+          await api(`/api/requisitions?id=${item.id}`, { method: "DELETE" });
           showToast("ลบรายการเรียบร้อยแล้ว");
           loadData();
+        } catch (e: any) {
+          showToast(e.message, "error");
+        }
+      },
+    });
+
+  const switchView = (mode: "slips" | "items") => {
+    if (mode === viewMode) return;
+    setViewMode(mode);
+    setSortBy("");
+    setSortOrder("asc");
+    setPage(1);
+  };
+
+  const deleteDetailItem = (item: RequisitionItemRow) =>
+    setConfirm({
+      title: "ยืนยันการลบรายการในใบเบิก",
+      description: `ลบ ${item.code} (${item.itemName}) ออกจากใบเบิก ${item.requisitionNo}?`,
+      onConfirm: async () => {
+        try {
+          await api(`/api/requisitions?id=${item.id}`, { method: "DELETE" });
+          showToast("ลบรายการเรียบร้อยแล้ว");
+          await Promise.all([
+            loadData(),
+            openRequisitionDetail(item.requisitionNo, item.requestDate),
+          ]);
         } catch (e: any) {
           showToast(e.message, "error");
         }
@@ -406,7 +511,7 @@ export default function RequisitionsPage() {
             การเบิกหน่วยงานรายวัน
           </h1>
           <p className="text-sm text-slate-500">
-            เก็บข้อมูลการเบิกแยกตามวันที่และหน่วยงาน พร้อมเชื่อมโยงรหัสสินค้ากับทะเบียน ITEMSTORE
+            แสดงสรุปตามเลขที่ใบเบิก (คลิกที่เลขใบเบิกเพื่อเปิดดูรายการสินค้าด้านในที่เชื่อมกับทะเบียน ITEMSTORE)
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -432,16 +537,16 @@ export default function RequisitionsPage() {
       {/* Dynamic Stats Cards */}
       <div className="grid grid-cols-2 gap-2.5 lg:grid-cols-4">
         <StatCard
-          label="รายการเบิกที่แสดง"
-          value={stats.totalRows.toLocaleString()}
-          icon={<Layers className="h-4 w-4" />}
-          color="text-blue-600 bg-blue-50"
-        />
-        <StatCard
           label="จำนวนใบเบิก"
           value={stats.totalRequisitions.toLocaleString()}
           icon={<ClipboardList className="h-4 w-4" />}
           color="text-indigo-600 bg-indigo-50"
+        />
+        <StatCard
+          label="รวมรายการสินค้าในใบเบิก"
+          value={stats.totalRows.toLocaleString()}
+          icon={<Layers className="h-4 w-4" />}
+          color="text-blue-600 bg-blue-50"
         />
         <StatCard
           label="จำนวนหน่วยงาน"
@@ -622,7 +727,7 @@ export default function RequisitionsPage() {
             <Input
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              placeholder="ค้นหาใบเบิก / รหัส / ชื่อ / หน่วยงาน..."
+              placeholder="ค้นหาเลขใบเบิก / หน่วยงาน / รหัส / ชื่อ..."
               className="h-9 pl-8 text-xs"
             />
           </div>
@@ -684,187 +789,398 @@ export default function RequisitionsPage() {
         )}
       </div>
 
-      {/* Main Data Table */}
+      {/* View Mode Tabs (ตามใบเบิก / รายรายการ) */}
+      <div className="flex items-center gap-1 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => switchView("slips")}
+          className={`inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
+            viewMode === "slips"
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <ClipboardList className="h-4 w-4" />
+          ตามใบเบิก
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${
+              viewMode === "slips" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {stats.totalRequisitions.toLocaleString()}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => switchView("items")}
+          className={`inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
+            viewMode === "items"
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <Layers className="h-4 w-4" />
+          รายรายการ
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${
+              viewMode === "items" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {stats.totalRows.toLocaleString()}
+          </span>
+        </button>
+      </div>
+
+      {/* Main Table Card */}
       <div className="flex min-h-[460px] flex-col rounded-xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-4 py-2.5 text-xs text-slate-500">
-          <span>
-            แสดง <b className="text-slate-700">{items.length.toLocaleString()}</b> จาก{" "}
-            <b className="text-slate-700">{total.toLocaleString()}</b> รายการ
-          </span>
-          <span className="text-[11px] text-slate-400">คลิกที่หัวคอลัมน์เพื่อเรียงลำดับข้อมูล</span>
+          {viewMode === "slips" ? (
+            <>
+              <span>
+                แสดง <b className="text-slate-700">{requisitions.length.toLocaleString()}</b> จาก{" "}
+                <b className="text-slate-700">{total.toLocaleString()}</b> ใบเบิก (หน้าละ {PAGE_SIZE} ใบเบิก)
+              </span>
+              <span className="text-[11px] text-slate-400">คลิกที่เลขที่ใบเบิกเพื่อเปิดดูรายการสินค้าด้านใน</span>
+            </>
+          ) : (
+            <>
+              <span>
+                แสดง <b className="text-slate-700">{lineItems.length.toLocaleString()}</b> จาก{" "}
+                <b className="text-slate-700">{total.toLocaleString()}</b> รายการ (หน้าละ {PAGE_SIZE} รายการ)
+              </span>
+              <span className="text-[11px] text-slate-400">คลิกที่หัวคอลัมน์เพื่อเรียงลำดับข้อมูล</span>
+            </>
+          )}
         </div>
 
         <div className="flex-1 overflow-auto">
-          <table className="w-full text-sm">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
-              <tr>
-                <SortableTh
-                  label="วันที่ขอเบิก"
-                  sortKey="requestDate"
-                  activeKey={sortBy}
-                  order={sortOrder}
-                  onSort={handleSort}
-                  className="w-28"
-                />
-                <SortableTh
-                  label="เลขที่ใบเบิก"
-                  sortKey="requisitionNo"
-                  activeKey={sortBy}
-                  order={sortOrder}
-                  onSort={handleSort}
-                  className="w-32"
-                />
-                <SortableTh
-                  label="หน่วยงาน"
-                  sortKey="department"
-                  activeKey={sortBy}
-                  order={sortOrder}
-                  onSort={handleSort}
-                />
-                <SortableTh
-                  label="Act"
-                  sortKey="action"
-                  activeKey={sortBy}
-                  order={sortOrder}
-                  onSort={handleSort}
-                  align="center"
-                  className="w-16"
-                />
-                <SortableTh
-                  label="รหัส (code)"
-                  sortKey="code"
-                  activeKey={sortBy}
-                  order={sortOrder}
-                  onSort={handleSort}
-                />
-                <th className="px-3 py-2.5 text-left font-semibold">ชื่อสินค้า (ITEMSTORE)</th>
-                <th className="px-3 py-2.5 text-center font-semibold">Location / คลัง</th>
-                <SortableTh
-                  label="ขอเบิก"
-                  sortKey="qtyRequist"
-                  activeKey={sortBy}
-                  order={sortOrder}
-                  onSort={handleSort}
-                  align="right"
-                  className="w-24"
-                />
-                <th className="px-3 py-2.5 text-left font-semibold">หน่วย</th>
-                <th className="w-14 px-2 py-2.5 text-center font-semibold">ลบ</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {loading && !items.length ? (
+          {viewMode === "slips" ? (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                  <td colSpan={10} className="py-14 text-center text-slate-400">
-                    <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" /> กำลังโหลด...
-                  </td>
+                  <th className="w-16 px-3 py-2.5 text-center font-semibold">ลำดับ</th>
+                  <SortableTh
+                    label="วันที่ขอเบิก"
+                    sortKey="requestDate"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    className="w-32"
+                  />
+                  <SortableTh
+                    label="เลขที่ใบเบิก"
+                    sortKey="requisitionNo"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    className="w-40"
+                  />
+                  <SortableTh
+                    label="หน่วยงาน"
+                    sortKey="department"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="Act"
+                    sortKey="action"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    align="center"
+                    className="w-20"
+                  />
+                  <SortableTh
+                    label="จำนวนรายการ"
+                    sortKey="itemCount"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    align="right"
+                    className="w-32"
+                  />
+                  <SortableTh
+                    label="รวมขอเบิก"
+                    sortKey="totalQty"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    align="right"
+                    className="w-32"
+                  />
+                  <th className="w-32 px-3 py-2.5 text-center font-semibold">จัดการ</th>
                 </tr>
-              ) : items.length === 0 ? (
-                <tr>
-                  <td colSpan={10} className="py-14 text-center text-slate-400">
-                    <ClipboardList className="mx-auto mb-2 h-8 w-8 text-slate-300" />
-                    ไม่พบข้อมูลการเบิก
-                    {!hasActiveFilter && (
-                      <div className="mt-3">
-                        <Button
-                          size="sm"
-                          onClick={() => setShowImport(true)}
-                          className="bg-emerald-600 hover:bg-emerald-700"
-                        >
-                          <Upload className="h-4 w-4" /> นำเข้าไฟล์ Excel การเบิก
-                        </Button>
-                      </div>
-                    )}
-                  </td>
-                </tr>
-              ) : (
-                items.map((r) => (
-                  <tr key={r.id} className={`hover:bg-blue-50/40 ${loading ? "opacity-60" : ""}`}>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-700">
-                      {r.requestDateText || formatThaiDate(r.requestDate)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-blue-700">
-                      {r.requisitionNo}
-                      {r.suf !== null && (
-                        <span className="ml-1 text-[10px] font-normal text-slate-400">#{r.suf}</span>
-                      )}
-                    </td>
-                    <td className="max-w-[210px] px-3 py-2 text-xs text-slate-700">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedDepts([r.department]);
-                          setPage(1);
-                        }}
-                        className="block max-w-full truncate text-left hover:text-blue-700 hover:underline"
-                        title={`กรองหน่วยงาน: ${r.department}`}
-                      >
-                        {r.department}
-                      </button>
-                    </td>
-                    <td className="px-3 py-2 text-center">
-                      <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-700">
-                        {r.action}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-slate-800">
-                      {r.code}
-                    </td>
-                    <td className="max-w-[340px] px-3 py-2 text-xs text-slate-700">
-                      <div className="truncate" title={r.itemName}>
-                        {r.itemName}
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-center">
-                      {r.inRegistry ? (
-                        <div className="inline-flex items-center gap-1">
-                          {r.locationName && (
-                            <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
-                              <MapPin className="h-2.5 w-2.5 text-slate-400" />
-                              {r.locationName}
-                            </span>
-                          )}
-                          {r.itemTypeName && (
-                            <span
-                              className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
-                                r.itemTypeId === 1
-                                  ? "border-blue-200 bg-blue-100 text-blue-700"
-                                  : "border-amber-200 bg-amber-100 text-amber-800"
-                              }`}
-                            >
-                              {r.itemTypeName}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-[11px] text-slate-400">ไม่พบในทะเบียน</span>
-                      )}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs font-bold text-emerald-700">
-                      {formatNum(r.qtyRequist)}
-                    </td>
-                    <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-600">{r.unit}</td>
-                    <td className="px-2 py-2 text-center">
-                      <button
-                        type="button"
-                        onClick={() => deleteRow(r)}
-                        title="ลบรายการ"
-                        className="rounded p-1 text-red-500 hover:bg-red-50"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading && !requisitions.length ? (
+                  <tr>
+                    <td colSpan={8} className="py-14 text-center text-slate-400">
+                      <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" /> กำลังโหลด...
                     </td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                ) : requisitions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-14 text-center text-slate-400">
+                      <ClipboardList className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                      ไม่พบข้อมูลใบเบิก
+                      {!hasActiveFilter && (
+                        <div className="mt-3">
+                          <Button
+                            size="sm"
+                            onClick={() => setShowImport(true)}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                          >
+                            <Upload className="h-4 w-4" /> นำเข้าไฟล์ Excel การเบิก
+                          </Button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ) : (
+                  requisitions.map((r, idx) => (
+                    <tr
+                      key={`${r.requisitionNo}|${r.requestDate}|${r.department}|${r.action}`}
+                      className={`hover:bg-blue-50/40 ${loading ? "opacity-60" : ""}`}
+                    >
+                      <td className="px-3 py-2.5 text-center font-mono text-xs text-slate-500">
+                        {(page - 1) * PAGE_SIZE + idx + 1}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-xs text-slate-700">
+                        {r.requestDateText || formatThaiDate(r.requestDate)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5">
+                        <button
+                          type="button"
+                          onClick={() => openRequisitionDetail(r.requisitionNo, r.requestDate)}
+                          className="font-mono text-xs font-bold text-blue-700 underline-offset-2 hover:text-blue-900 hover:underline"
+                          title="คลิกเพื่อดูรายการสินค้าในใบเบิกนี้"
+                        >
+                          {r.requisitionNo}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5 text-xs text-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDepts([r.department]);
+                            setPage(1);
+                          }}
+                          className="text-left hover:text-blue-700 hover:underline"
+                          title={`กรองหน่วยงาน: ${r.department}`}
+                        >
+                          {r.department}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5 text-center">
+                        <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-medium text-slate-700">
+                          {r.action}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs font-semibold text-slate-700">
+                        {r.itemCount.toLocaleString()} รายการ
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2.5 text-right font-mono text-xs font-bold text-emerald-700">
+                        {formatNum(r.totalQty)}
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center justify-center gap-1">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => openRequisitionDetail(r.requisitionNo, r.requestDate)}
+                          >
+                            <Eye className="h-3.5 w-3.5" /> ดูรายการ
+                          </Button>
+                          <button
+                            type="button"
+                            onClick={() => deleteRequisitionSlip(r)}
+                            title="ลบใบเบิกนี้"
+                            className="rounded p-1.5 text-red-500 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          ) : (
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase text-slate-500">
+                <tr>
+                  <th className="w-14 px-2.5 py-2.5 text-center font-semibold">ลำดับ</th>
+                  <SortableTh
+                    label="วันที่ขอเบิก"
+                    sortKey="requestDate"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    className="w-28"
+                  />
+                  <SortableTh
+                    label="เลขที่ใบเบิก"
+                    sortKey="requisitionNo"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    className="w-32"
+                  />
+                  <SortableTh
+                    label="หน่วยงาน"
+                    sortKey="department"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <SortableTh
+                    label="Act"
+                    sortKey="action"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    align="center"
+                    className="w-16"
+                  />
+                  <SortableTh
+                    label="รหัส (code)"
+                    sortKey="code"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                  />
+                  <th className="px-3 py-2.5 text-left font-semibold">ชื่อสินค้า (ITEMSTORE)</th>
+                  <th className="px-3 py-2.5 text-center font-semibold">Location / คลัง</th>
+                  <SortableTh
+                    label="ขอเบิก"
+                    sortKey="qtyRequist"
+                    activeKey={sortBy}
+                    order={sortOrder}
+                    onSort={handleSort}
+                    align="right"
+                    className="w-24"
+                  />
+                  <th className="px-3 py-2.5 text-left font-semibold">หน่วย</th>
+                  <th className="w-12 px-2 py-2.5 text-center font-semibold">ลบ</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {loading && !lineItems.length ? (
+                  <tr>
+                    <td colSpan={11} className="py-14 text-center text-slate-400">
+                      <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" /> กำลังโหลด...
+                    </td>
+                  </tr>
+                ) : lineItems.length === 0 ? (
+                  <tr>
+                    <td colSpan={11} className="py-14 text-center text-slate-400">
+                      <ClipboardList className="mx-auto mb-2 h-8 w-8 text-slate-300" />
+                      ไม่พบรายการเบิก
+                    </td>
+                  </tr>
+                ) : (
+                  lineItems.map((r, idx) => (
+                    <tr key={r.id} className={`hover:bg-blue-50/40 ${loading ? "opacity-60" : ""}`}>
+                      <td className="px-2.5 py-2 text-center font-mono text-xs text-slate-500">
+                        {(page - 1) * PAGE_SIZE + idx + 1}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-700">
+                        {r.requestDateText || formatThaiDate(r.requestDate)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2">
+                        <button
+                          type="button"
+                          onClick={() => openRequisitionDetail(r.requisitionNo, r.requestDate)}
+                          className="font-mono text-xs font-semibold text-blue-700 underline-offset-2 hover:underline"
+                          title="เปิดดูใบเบิกนี้"
+                        >
+                          {r.requisitionNo}
+                        </button>
+                        {r.suf !== null && (
+                          <span className="ml-1 text-[10px] text-slate-400">#{r.suf}</span>
+                        )}
+                      </td>
+                      <td className="max-w-[190px] px-3 py-2 text-xs text-slate-700">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedDepts([r.department]);
+                            setPage(1);
+                          }}
+                          className="block max-w-full truncate text-left hover:text-blue-700 hover:underline"
+                          title={`กรองหน่วยงาน: ${r.department}`}
+                        >
+                          {r.department}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <span className="rounded bg-slate-100 px-1.5 py-0.5 font-mono text-[11px] font-medium text-slate-700">
+                          {r.action}
+                        </span>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono text-xs font-semibold text-slate-800">
+                        {r.code}
+                      </td>
+                      <td className="max-w-[320px] px-3 py-2 text-xs text-slate-700">
+                        <div className="truncate" title={r.itemName}>
+                          {r.itemName}
+                        </div>
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-center">
+                        {r.inRegistry ? (
+                          <div className="inline-flex items-center gap-1">
+                            {r.locationName && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                                <MapPin className="h-2.5 w-2.5 text-slate-400" />
+                                {r.locationName}
+                              </span>
+                            )}
+                            {r.itemTypeName && (
+                              <span
+                                className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                                  r.itemTypeId === 1
+                                    ? "border-blue-200 bg-blue-100 text-blue-700"
+                                    : "border-amber-200 bg-amber-100 text-amber-800"
+                                }`}
+                              >
+                                {r.itemTypeName}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">ไม่พบในทะเบียน</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono text-xs font-bold text-emerald-700">
+                        {formatNum(r.qtyRequist)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-xs text-slate-600">{r.unit}</td>
+                      <td className="px-2 py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => deleteLineItem(r)}
+                          title="ลบรายการ"
+                          className="rounded p-1 text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          )}
         </div>
 
         {/* Pagination */}
         <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2.5 text-xs text-slate-600">
           <span>
-            หน้า <b>{page}</b> / <b>{totalPages}</b> · ทั้งหมด <b>{total.toLocaleString()}</b> รายการ
+            หน้า <b>{page}</b> / <b>{totalPages}</b> · ทั้งหมด <b>{total.toLocaleString()}</b>{" "}
+            {viewMode === "slips" ? "ใบเบิก" : "รายการ"}
           </span>
           <div className="flex gap-1.5">
             <Button
@@ -888,6 +1204,134 @@ export default function RequisitionsPage() {
           </div>
         </div>
       </div>
+
+      {/* ===== Requisition Detail Modal (Items inside the clicked Requisition Slip) ===== */}
+      <Dialog
+        open={detailOpen}
+        onOpenChange={(o) => {
+          setDetailOpen(o);
+          if (!o) setDetail(null);
+        }}
+      >
+        <DialogContent className="sm:max-w-5xl max-h-[88vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="flex flex-wrap items-center gap-2 text-lg">
+              <ClipboardList className="h-5 w-5 text-blue-600" />
+              <span>ใบเบิกเลขที่</span>
+              <span className="font-mono text-blue-700">{detail?.requisitionNo || "..."}</span>
+              {detail?.action && (
+                <span className="rounded bg-slate-100 px-2 py-0.5 font-mono text-xs font-medium text-slate-700">
+                  {detail.action}
+                </span>
+              )}
+            </DialogTitle>
+            <DialogDescription asChild>
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 pt-1 text-xs text-slate-600">
+                {detail && (
+                  <>
+                    <span className="inline-flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 text-slate-400" />
+                      วันที่ขอเบิก: <b>{detail.requestDateText || formatThaiDate(detail.requestDate)}</b>
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <Building2 className="h-3.5 w-3.5 text-slate-400" />
+                      หน่วยงาน: <b>{detail.department}</b>
+                    </span>
+                    <span>
+                      จำนวน: <b>{detail.itemCount.toLocaleString()} รายการ</b>
+                    </span>
+                    <span>
+                      รวมขอเบิก: <b className="text-emerald-700">{formatNum(detail.totalQty)}</b>
+                    </span>
+                  </>
+                )}
+              </div>
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto rounded-lg border border-slate-200">
+            {detailLoading ? (
+              <div className="py-16 text-center text-sm text-slate-400">
+                <RefreshCw className="mx-auto mb-2 h-5 w-5 animate-spin" /> กำลังโหลดรายการในใบเบิก...
+              </div>
+            ) : !detail || detail.items.length === 0 ? (
+              <div className="py-16 text-center text-sm text-slate-400">ไม่พบรายการสินค้าในใบเบิกนี้</div>
+            ) : (
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-slate-50 text-[11px] uppercase text-slate-500">
+                  <tr>
+                    <th className="w-12 px-2.5 py-2 text-center">ลำดับ</th>
+                    <th className="w-14 px-2 py-2 text-center">Suf</th>
+                    <th className="px-3 py-2 text-left">รหัส (code)</th>
+                    <th className="px-3 py-2 text-left">ชื่อสินค้า (ITEMSTORE)</th>
+                    <th className="px-3 py-2 text-center">Location / คลัง</th>
+                    <th className="w-24 px-3 py-2 text-right">ขอเบิก</th>
+                    <th className="w-20 px-3 py-2 text-left">หน่วย</th>
+                    <th className="w-12 px-2 py-2 text-center">ลบ</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {detail.items.map((it, idx) => (
+                    <tr key={it.id} className="hover:bg-blue-50/40">
+                      <td className="px-2.5 py-2 text-center font-mono text-slate-500">{idx + 1}</td>
+                      <td className="px-2 py-2 text-center font-mono text-slate-400">{it.suf ?? "-"}</td>
+                      <td className="whitespace-nowrap px-3 py-2 font-mono font-semibold text-slate-800">
+                        {it.code}
+                      </td>
+                      <td className="px-3 py-2 text-slate-700">{it.itemName}</td>
+                      <td className="whitespace-nowrap px-3 py-2 text-center">
+                        {it.inRegistry ? (
+                          <div className="inline-flex items-center gap-1">
+                            {it.locationName && (
+                              <span className="inline-flex items-center gap-0.5 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-semibold text-slate-700">
+                                <MapPin className="h-2.5 w-2.5 text-slate-400" />
+                                {it.locationName}
+                              </span>
+                            )}
+                            {it.itemTypeName && (
+                              <span
+                                className={`rounded border px-1.5 py-0.5 text-[10px] font-medium ${
+                                  it.itemTypeId === 1
+                                    ? "border-blue-200 bg-blue-100 text-blue-700"
+                                    : "border-amber-200 bg-amber-100 text-amber-800"
+                                }`}
+                              >
+                                {it.itemTypeName}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[11px] text-slate-400">ไม่พบในทะเบียน</span>
+                        )}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-right font-mono font-bold text-emerald-700">
+                        {formatNum(it.qtyRequist)}
+                      </td>
+                      <td className="whitespace-nowrap px-3 py-2 text-slate-600">{it.unit}</td>
+                      <td className="px-2 py-2 text-center">
+                        <button
+                          type="button"
+                          onClick={() => deleteDetailItem(it)}
+                          title="ลบรายการนี้"
+                          className="rounded p-1 text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          <div className="flex justify-end pt-2">
+            <Button variant="outline" size="sm" onClick={() => setDetailOpen(false)}>
+              ปิดหน้าต่าง
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ===== Import Modal (Strict Structural Validation) ===== */}
       <Dialog
