@@ -1,12 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { validateAndParseFile, InventoryFileType } from "@/lib/excel-validator";
 import { prisma } from "@/lib/prisma";
+import {
+  parseDataDate,
+  parseDataGroup,
+  DATA_GROUP_LABELS,
+} from "@/lib/inventory-data-group";
 
 export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const fileType = formData.get("fileType") as InventoryFileType | null;
+    const dataGroup = parseDataGroup(formData.get("dataGroup") as string | null);
+    const dataDate = parseDataDate(formData.get("dataDate") as string | null);
 
     if (!file) {
       return NextResponse.json(
@@ -22,7 +29,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // ตรวจสอบนามสกุลไฟล์
     const fileName = file.name;
     const isExcel =
       fileName.endsWith(".xls") ||
@@ -47,16 +53,13 @@ export async function POST(req: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // ทำการ Validate และ Parse
     const result = validateAndParseFile(fileType, buffer);
 
     const rawPeriod = (formData.get("period") as string) || "";
-    // ถ้าไม่ได้ระบุงวด ให้ใช้วันที่ปัจจุบันเป็นงวด (YYYY-MM)
     const now = new Date();
     const currentPeriodStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const period = rawPeriod.trim() || currentPeriodStr;
 
-    // ตรวจสอบประวัติการนำเข้าเดิมในฐานข้อมูล (Duplicate Check ในงวดเดือนเดียวกัน)
     let existingBatchCount = 0;
     let latestBatch: any = null;
     let isDuplicate = false;
@@ -64,12 +67,12 @@ export async function POST(req: NextRequest) {
 
     try {
       existingBatchCount = await prisma.importBatch.count({
-        where: { fileType, period },
+        where: { fileType, period, dataGroup },
       });
 
       if (existingBatchCount > 0) {
         latestBatch = await prisma.importBatch.findFirst({
-          where: { fileType, period },
+          where: { fileType, period, dataGroup },
           orderBy: { createdAt: "desc" },
         });
 
@@ -87,7 +90,7 @@ export async function POST(req: NextRequest) {
           ? new Date(latestBatch.createdAt).toLocaleString("th-TH")
           : "";
 
-        duplicateMessage = `ตรวจพบข้อมูลประเภท "${typeName}" ในงวด [${period}] อยู่แล้ว (${existingBatchCount} รอบ, ล่าสุดไฟล์ "${latestBatch?.fileName || "-"}" เมื่อ ${dateStr})`;
+        duplicateMessage = `ตรวจพบข้อมูลประเภท "${typeName}" กลุ่ม [${DATA_GROUP_LABELS[dataGroup]}] ในงวด [${period}] อยู่แล้ว (${existingBatchCount} รอบ, ล่าสุดไฟล์ "${latestBatch?.fileName || "-"}" เมื่อ ${dateStr})`;
       }
     } catch (dbErr) {
       console.warn("Could not check duplicate batches from DB:", dbErr);
@@ -98,6 +101,8 @@ export async function POST(req: NextRequest) {
       fileName,
       fileSize: file.size,
       period,
+      dataGroup,
+      dataDate,
       duplicateInfo: {
         isDuplicate,
         existingBatchCount,

@@ -38,6 +38,11 @@ import {
   ArrowDown,
 } from "lucide-react";
 import * as xlsx from "xlsx";
+import {
+  type InventoryDataGroup,
+  DATA_GROUP_LABELS,
+  formatDataDate,
+} from "@/lib/inventory-data-group";
 
 type InventoryFileType = "BALANCE" | "DISPENSE" | "SALE" | "USAGE";
 
@@ -103,6 +108,10 @@ export default function InventoryMasterPage() {
   const [selectedPeriod, setSelectedPeriod] = useState<string>("LATEST");
   const [availablePeriods, setAvailablePeriods] = useState<string[]>(["2026-10"]);
   const [importPeriod, setImportPeriod] = useState<string>(currentMonthStr);
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  const [importDataDate, setImportDataDate] = useState<string>(todayStr);
+  const [importDataGroup, setImportDataGroup] = useState<InventoryDataGroup>("MAINSTORE");
+  const [selectedDataGroup, setSelectedDataGroup] = useState<InventoryDataGroup>("MAINSTORE");
 
   // Upload state
   const [selectedFileType, setSelectedFileType] = useState<InventoryFileType>("USAGE");
@@ -153,13 +162,44 @@ export default function InventoryMasterPage() {
 
   // Batches state
   const [batches, setBatches] = useState<any[]>([]);
+  const [latestFiles, setLatestFiles] = useState<
+    Record<string, { fileName: string; createdAt?: string; period?: string | null } | null>
+  >({});
 
-  // Fetch data when switching tabs or changing filters / sorting / period
+  // Fetch data when switching tabs or changing filters / sorting / period / dataGroup
   useEffect(() => {
-    if (activeTab !== "upload") {
+    if (activeTab === "upload") {
+      fetchLatestFiles();
+    } else {
       fetchTabData();
     }
-  }, [activeTab, selectedPeriod, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, sortBy, sortOrder]);
+  }, [activeTab, selectedPeriod, selectedDataGroup, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, sortBy, sortOrder]);
+
+  // เมื่อสลับกลุ่มบนหน้าอัปโหลด ให้รีเฟรชชื่อไฟล์ล่าสุดของกลุ่มนั้น
+  useEffect(() => {
+    if (activeTab === "upload") {
+      fetchLatestFiles();
+    }
+  }, [importDataGroup]);
+
+  const fetchLatestFiles = async () => {
+    try {
+      const qs = new URLSearchParams({
+        tab: "upload",
+        dataGroup: activeTab === "upload" ? importDataGroup : selectedDataGroup,
+      });
+      const res = await fetch(`/api/inventory-analytics/overview?${qs.toString()}`);
+      const data = await res.json();
+      if (res.ok) {
+        if (data.latestFiles) setLatestFiles(data.latestFiles);
+        if (data.availablePeriods && data.availablePeriods.length > 0) {
+          setAvailablePeriods(data.availablePeriods);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching latest files:", error);
+    }
+  };
 
   const fetchTabData = async () => {
     setLoadingData(true);
@@ -167,6 +207,7 @@ export default function InventoryMasterPage() {
       const queryParams = new URLSearchParams({
         tab: activeTab,
         period: selectedPeriod,
+        dataGroup: selectedDataGroup,
         search: searchTerm,
         category: selectedCategory,
         supplier: selectedSupplier,
@@ -184,6 +225,7 @@ export default function InventoryMasterPage() {
         if (data.availablePeriods && data.availablePeriods.length > 0) {
           setAvailablePeriods(data.availablePeriods);
         }
+        if (data.latestFiles) setLatestFiles(data.latestFiles);
         if (activeTab === "batches") {
           setBatches(data.batches || []);
         } else {
@@ -257,6 +299,8 @@ export default function InventoryMasterPage() {
       formData.append("file", file);
       formData.append("fileType", fileType);
       formData.append("period", importPeriod);
+      formData.append("dataGroup", importDataGroup);
+      if (importDataDate) formData.append("dataDate", importDataDate);
 
       const res = await fetch("/api/inventory-analytics/validate", {
         method: "POST",
@@ -303,7 +347,7 @@ export default function InventoryMasterPage() {
           ? "3. ยอดขาย"
           : "4. ปริมาณการใช้ & คู่ค้า";
 
-      const confirmMsg = `ยืนยันการแทนที่ข้อมูลเดิมของ "${typeName}" ในงวด [${importPeriod}] ใช่หรือไม่?\n(ระบบจะลบข้อมูลชุดเดิมเฉพาะในงวดนี้ และนำเข้าชุดใหม่นี้แทน โดยข้อมูลเดือนอื่นๆ ยังคงอยู่ครบถ้วน)`;
+      const confirmMsg = `ยืนยันการแทนที่ข้อมูลเดิมของ "${typeName}" กลุ่ม [${DATA_GROUP_LABELS[importDataGroup]}] ในงวด [${importPeriod}] ใช่หรือไม่?\n(ระบบจะลบข้อมูลชุดเดิมเฉพาะในงวด+กลุ่มนี้ และนำเข้าชุดใหม่นี้แทน โดยกลุ่ม/เดือนอื่นยังคงอยู่ครบถ้วน)`;
       if (!confirm(confirmMsg)) return;
     }
 
@@ -316,6 +360,8 @@ export default function InventoryMasterPage() {
       formData.append("fileType", selectedFileType);
       formData.append("importMode", importMode);
       formData.append("period", importPeriod);
+      formData.append("dataGroup", importDataGroup);
+      if (importDataDate) formData.append("dataDate", importDataDate);
       if (note) formData.append("note", note);
 
       const res = await fetch("/api/inventory-analytics/import", {
@@ -330,14 +376,17 @@ export default function InventoryMasterPage() {
         setValidationResult(null);
         setNote("");
         if (fileInputRef.current) fileInputRef.current.value = "";
-        // อัปเดต selectedPeriod ให้เป็นงวดที่เพิ่งนำเข้า และเพิ่มลง availablePeriods
+        // อัปเดต selectedPeriod/กลุ่ม ให้เป็นงวดที่เพิ่งนำเข้า และเพิ่มลง availablePeriods
         setSelectedPeriod(importPeriod);
+        setSelectedDataGroup(importDataGroup);
         setAvailablePeriods((prev) => {
           if (!prev.includes(importPeriod)) {
             return [importPeriod, ...prev].sort().reverse();
           }
           return prev;
         });
+        // รีเฟรชชื่อไฟล์ล่าสุดบนการ์ดนำเข้า
+        fetchLatestFiles();
       } else {
         alert(data.error || "เกิดข้อผิดพลาดในการนำเข้า");
       }
@@ -349,13 +398,15 @@ export default function InventoryMasterPage() {
     }
   };
 
-  // Direct Clear Data from Database (รองรับลบเฉพาะงวดเดือนที่เลือก)
+  // Direct Clear Data from Database (รองรับลบเฉพาะงวดเดือน+กลุ่มที่เลือก)
   const handleClearData = async (
     fileType: "BALANCE" | "DISPENSE" | "SALE" | "USAGE" | "ALL",
     targetPeriod?: string
   ) => {
     const periodToClear = targetPeriod !== undefined ? targetPeriod : (selectedPeriod !== "ALL" ? selectedPeriod : undefined);
+    const groupForClear = activeTab === "upload" ? importDataGroup : selectedDataGroup;
     const periodText = periodToClear ? ` ในงวด [${formatPeriodLabel(periodToClear)}]` : " ทั้งหมดทุกงวดเดือน";
+    const groupText = ` กลุ่ม [${DATA_GROUP_LABELS[groupForClear]}]`;
     const typeName =
       fileType === "BALANCE"
         ? "1. ยอดคงเหลือ"
@@ -369,7 +420,7 @@ export default function InventoryMasterPage() {
 
     if (
       !confirm(
-        `⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบ "${typeName}"${periodText} ออกจากฐานข้อมูล?\n(หากระบุงวด ระบบจะลบเฉพาะงวดนั้น ข้อมูลงวดเดือนอื่นจะไม่ได้รับผลกระทบ)`
+        `⚠️ คุณแน่ใจหรือไม่ว่าต้องการลบ "${typeName}"${groupText}${periodText} ออกจากฐานข้อมูล?\n(ระบบจะลบเฉพาะกลุ่ม+งวดที่ระบุ ข้อมูลกลุ่ม/งวดอื่นจะไม่ได้รับผลกระทบ)`
       )
     ) {
       return;
@@ -377,7 +428,7 @@ export default function InventoryMasterPage() {
 
     setIsClearing(true);
     try {
-      const url = `/api/inventory-analytics/clear?fileType=${fileType}${periodToClear ? `&period=${periodToClear}` : ""}`;
+      const url = `/api/inventory-analytics/clear?fileType=${fileType}&dataGroup=${groupForClear}${periodToClear ? `&period=${periodToClear}` : ""}`;
       const res = await fetch(url, {
         method: "DELETE",
       });
@@ -387,6 +438,7 @@ export default function InventoryMasterPage() {
         if (activeTab === "upload") {
           setValidationResult(null);
           setSelectedFile(null);
+          fetchLatestFiles();
         } else {
           fetchTabData();
         }
@@ -465,6 +517,8 @@ export default function InventoryMasterPage() {
       // ดึงข้อมูลทั้งหมดตามตัวกรองที่เลือกอยู่ (all=true)
       const queryParams = new URLSearchParams({
         tab: activeTab,
+        period: selectedPeriod,
+        dataGroup: selectedDataGroup,
         search: searchTerm,
         category: selectedCategory,
         supplier: selectedSupplier,
@@ -548,9 +602,6 @@ export default function InventoryMasterPage() {
             <h1 className="text-2xl md:text-3xl font-bold tracking-tight">
               ระบบวิเคราะห์ปริมาณการใช้ & สรุปยอดสั่งซื้อ (Master Overview)
             </h1>
-            <p className="mt-1 text-xs md:text-sm text-blue-100 max-w-2xl">
-              ผสานข้อมูล 4 ไฟล์ (1.คงเหลือ + 2.ตัดจ่าย + 3.ขาย + 4.ปริมาณการใช้) คำนวณสูตร <b>MAX</b>, <b>AVG</b>, และ <b>เหลือ - MAX</b> แยกหมวดและบริษัทคู่ค้าตาม Sheet <b>เหลือ</b>
-            </p>
           </div>
 
           {/* Quick Metrics */}
@@ -623,10 +674,44 @@ export default function InventoryMasterPage() {
                 แสดงข้อมูลงวด: {formatPeriodLabel(selectedPeriod === "LATEST" ? (availablePeriods[0] || currentMonthStr) : selectedPeriod)}
               </span>
             )}
+
+            <div className="inline-flex items-center gap-1 bg-white/15 rounded-xl p-1 border border-white/25">
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDataGroup("MAINSTORE");
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  selectedDataGroup === "MAINSTORE"
+                    ? "bg-white text-sky-700 shadow-sm"
+                    : "text-blue-100 hover:bg-white/10"
+                }`}
+              >
+                Mainstore
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedDataGroup("PASDU");
+                  setCurrentPage(1);
+                }}
+                className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
+                  selectedDataGroup === "PASDU"
+                    ? "bg-amber-400 text-amber-950 shadow-sm"
+                    : "text-blue-100 hover:bg-white/10"
+                }`}
+              >
+                พัสดุ
+              </button>
+            </div>
           </div>
 
           <div className="text-[11px] text-blue-100 flex items-center gap-1 bg-white/10 px-2.5 py-1 rounded-lg border border-white/10">
-            <span>✨ ข้อมูลแต่ละงวดเดือนถูกจัดเก็บแยกกันอิสระ นำเข้าเดือนถัดไปได้ทันทีโดยไม่ทับข้อมูลเก่า</span>
+            <span>
+              ✨ แยกเก็บตามงวดเดือน + กลุ่มข้อมูล · กำลังดู:{" "}
+              <b>{DATA_GROUP_LABELS[selectedDataGroup]}</b>
+            </span>
           </div>
         </div>
       </div>
@@ -649,7 +734,10 @@ export default function InventoryMasterPage() {
         </button>
 
         <button
-          onClick={() => setActiveTab("upload")}
+          onClick={() => {
+            setActiveTab("upload");
+            setImportDataGroup(selectedDataGroup);
+          }}
           className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition-all ${
             activeTab === "upload"
               ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
@@ -1289,29 +1377,37 @@ export default function InventoryMasterPage() {
       {/* TAB 2: UPLOAD & VALIDATION (4 FILE CARDS) */}
       {activeTab === "upload" && (
         <div className="space-y-6">
-          {/* งวดประจำเดือนที่จะนำเข้า (Import Period Box) */}
-          <div className="rounded-2xl bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 p-5 border-2 border-blue-200 shadow-sm">
+          {/* งวดประจำเดือน + วันที่กำกับ + กลุ่มข้อมูล */}
+          <div className="rounded-2xl bg-gradient-to-r from-blue-50 via-indigo-50 to-sky-50 p-5 border-2 border-blue-200 shadow-sm space-y-3">
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="flex items-start gap-3">
                 <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-blue-600 text-white flex-shrink-0 shadow-md">
                   <Database className="h-6 w-6" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <h3 className="font-bold text-gray-900 text-sm md:text-base">
                       📅 เลือกงวดประจำเดือนที่ต้องการนำเข้าข้อมูล
                     </h3>
                     <span className="rounded-full bg-blue-600 text-white px-2.5 py-0.5 text-[11px] font-bold">
                       {formatPeriodLabel(importPeriod)}
                     </span>
+                    <span
+                      className={`rounded-full px-2.5 py-0.5 text-[11px] font-bold ${
+                        importDataGroup === "MAINSTORE"
+                          ? "bg-sky-600 text-white"
+                          : "bg-amber-600 text-white"
+                      }`}
+                    >
+                      {DATA_GROUP_LABELS[importDataGroup]}
+                    </span>
                   </div>
                   <p className="text-xs text-blue-900 mt-1">
-                    ✨ <b>ระบบเก็บข้อมูลแยกตามงวดเดือน</b>: หากนำเข้าของ <b>เดือนถัดไป</b> ข้อมูลของเดือนเดิมจะไม่สูญหายและไม่ถูกทับ สามารถย้อนดูหรือเปรียบเทียบได้ตลอดเวลา
+                    เก็บแยกตาม <b>งวดเดือน + กลุ่มข้อมูล</b> และระบุ <b>วันที่กำกับ</b> ของไฟล์ได้ (วันที่นำเข้าระบบจะบันทึกอัตโนมัติ)
                   </p>
                 </div>
               </div>
 
-              {/* ปุ่มลัดเลือกงวดเดือน */}
               <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-blue-200 shadow-sm">
                 <span className="text-xs font-semibold text-gray-600 pl-1">งวด:</span>
                 <button
@@ -1349,6 +1445,53 @@ export default function InventoryMasterPage() {
                 </div>
               </div>
             </div>
+
+            <div className="flex flex-col sm:flex-row flex-wrap gap-3">
+              {/* กลุ่มข้อมูล Mainstore / พัสดุ */}
+              <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-blue-200 shadow-sm">
+                <span className="text-xs font-semibold text-gray-600 pl-1">กลุ่มข้อมูล:</span>
+                <button
+                  type="button"
+                  onClick={() => setImportDataGroup("MAINSTORE")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importDataGroup === "MAINSTORE"
+                      ? "bg-sky-600 text-white shadow-sm"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  Mainstore
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setImportDataGroup("PASDU")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    importDataGroup === "PASDU"
+                      ? "bg-amber-600 text-white shadow-sm"
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                >
+                  พัสดุ
+                </button>
+              </div>
+
+              {/* วันที่กำกับของไฟล์ */}
+              <div className="flex flex-wrap items-center gap-2 bg-white p-2 rounded-xl border border-blue-200 shadow-sm">
+                <span className="text-xs font-semibold text-gray-600 pl-1">วันที่กำกับ:</span>
+                <input
+                  type="date"
+                  value={importDataDate}
+                  onChange={(e) => setImportDataDate(e.target.value)}
+                  className="rounded-lg border border-gray-300 px-2 py-1 text-xs font-mono text-gray-800 focus:outline-none focus:border-blue-500"
+                />
+                <button
+                  type="button"
+                  onClick={() => setImportDataDate(todayStr)}
+                  className="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200"
+                >
+                  วันนี้
+                </button>
+              </div>
+            </div>
           </div>
 
           {/* 4 Direct Browse Action Cards */}
@@ -1360,7 +1503,14 @@ export default function InventoryMasterPage() {
                   กดเลือกไฟล์ที่ต้องการนำเข้า (คลิกที่การ์ดเพื่อเปิดเลือกไฟล์ทันที)
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  ไฟล์ที่นำเข้าจะถูกบันทึกเข้าสู่ <b>งวด {formatPeriodLabel(importPeriod)}</b> โดยอัตโนมัติ
+                  บันทึกเข้าสู่ <b>งวด {formatPeriodLabel(importPeriod)}</b> · กลุ่ม{" "}
+                  <b>{DATA_GROUP_LABELS[importDataGroup]}</b>
+                  {importDataDate ? (
+                    <>
+                      {" "}
+                      · วันที่กำกับ <b>{formatDataDate(importDataDate)}</b>
+                    </>
+                  ) : null}
                 </p>
               </div>
 
@@ -1372,156 +1522,188 @@ export default function InventoryMasterPage() {
               )}
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
               {/* 1. คงเหลือ */}
               <div
                 onClick={() => triggerBrowseForType("BALANCE")}
-                className={`group cursor-pointer rounded-2xl p-4 border-2 transition-all hover:scale-[1.02] ${
+                className={`group flex min-w-0 cursor-pointer flex-col rounded-2xl p-3.5 border-2 transition-all hover:scale-[1.01] ${
                   selectedFileType === "BALANCE" && selectedFile
                     ? "border-blue-600 bg-blue-50/60 shadow-lg ring-2 ring-blue-500/30"
                     : "border-gray-200 hover:border-blue-500 hover:bg-blue-50/30 hover:shadow-md"
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-                      <Package className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-sm group-hover:text-blue-600">
-                        1. ไฟล์คงเหลือ
-                      </h3>
-                      <p className="text-[11px] text-gray-500 font-mono">p271069.xls / 1.คงเหลือ.xls</p>
-                    </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                    <Package className="h-4 w-4" />
                   </div>
-                  <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
-                    Store Stock
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="truncate font-bold text-gray-900 text-sm group-hover:text-blue-600">
+                        1. คงเหลือ
+                      </h3>
+                      <span
+                        className="shrink-0 rounded-md bg-blue-100 px-1.5 py-0.5 text-[9px] font-bold text-blue-700 whitespace-nowrap"
+                        title="Store Stock"
+                      >
+                        Stock
+                      </span>
+                    </div>
+                    <p
+                      className="truncate text-[11px] text-gray-500 font-mono"
+                      title={latestFiles.BALANCE?.fileName || "ยังไม่ได้นำเข้า"}
+                    >
+                      {latestFiles.BALANCE?.fileName || "ยังไม่ได้นำเข้า"}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
-                  <p>• <b>Col B</b>: รหัสสินค้า (ตัวเชื่อม)</p>
-                  <p>• <b>Col E</b>: จำนวนคงเหลือของ Store</p>
-                  <p>• <b>Col H</b>: จุดสั่งซื้อ MIN</p>
+                <div className="mt-2.5 flex-1 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2 rounded-xl border border-gray-100">
+                  <p className="truncate">• <b>Col B</b>: รหัสสินค้า</p>
+                  <p className="truncate">• <b>Col E</b>: จำนวนคงเหลือ</p>
+                  <p className="truncate">• <b>Col H</b>: จุดสั่งซื้อ MIN</p>
                 </div>
 
-                <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2 text-xs font-bold text-white group-hover:bg-blue-700 transition-colors shadow-sm">
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก p271069.xls / ไฟล์คงเหลือ</span>
+                <div className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-blue-600 py-2 text-xs font-bold text-white group-hover:bg-blue-700 transition-colors shadow-sm whitespace-nowrap">
+                  <UploadCloud className="h-3.5 w-3.5 shrink-0" />
+                  <span>เลือกไฟล์</span>
                 </div>
               </div>
 
               {/* 2. ตัดจ่าย */}
               <div
                 onClick={() => triggerBrowseForType("DISPENSE")}
-                className={`group cursor-pointer rounded-2xl p-4 border-2 transition-all hover:scale-[1.02] ${
+                className={`group flex min-w-0 cursor-pointer flex-col rounded-2xl p-3.5 border-2 transition-all hover:scale-[1.01] ${
                   selectedFileType === "DISPENSE" && selectedFile
                     ? "border-emerald-600 bg-emerald-50/60 shadow-lg ring-2 ring-emerald-500/30"
                     : "border-gray-200 hover:border-emerald-500 hover:bg-emerald-50/30 hover:shadow-md"
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
-                      <Percent className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-sm group-hover:text-emerald-600">
-                        2. ไฟล์ตัดจ่าย
-                      </h3>
-                      <p className="text-[11px] text-gray-500 font-mono">ตัดจ่าย P 271069.xls</p>
-                    </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-600 group-hover:bg-emerald-600 group-hover:text-white transition-colors">
+                    <Percent className="h-4 w-4" />
                   </div>
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
-                    กู้คืน_Sheet1
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="truncate font-bold text-gray-900 text-sm group-hover:text-emerald-600">
+                        2. ตัดจ่าย
+                      </h3>
+                      <span
+                        className="shrink-0 rounded-md bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 whitespace-nowrap"
+                        title="กู้คืน_Sheet1"
+                      >
+                        Sheet1
+                      </span>
+                    </div>
+                    <p
+                      className="truncate text-[11px] text-gray-500 font-mono"
+                      title={latestFiles.DISPENSE?.fileName || "ยังไม่ได้นำเข้า"}
+                    >
+                      {latestFiles.DISPENSE?.fileName || "ยังไม่ได้นำเข้า"}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
-                  <p>• <b>Col B</b>: Stock Code</p>
-                  <p>• <b>Col G</b>: คำนวณสูตร <b>(G/3)+G</b></p>
-                  <p className="text-emerald-700 font-bold">➔ ปรับปรุงเป็นยอดใช้</p>
+                <div className="mt-2.5 flex-1 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2 rounded-xl border border-gray-100">
+                  <p className="truncate">• <b>Col B</b>: Stock Code</p>
+                  <p className="truncate">• <b>Col G</b>: สูตร <b>(G/3)+G</b></p>
+                  <p className="truncate text-emerald-700 font-bold">➔ ปรับปรุงเป็นยอดใช้</p>
                 </div>
 
-                <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white group-hover:bg-emerald-700 transition-colors shadow-sm">
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก ตัดจ่าย P / 2.ตัดจ่าย.xls</span>
+                <div className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2 text-xs font-bold text-white group-hover:bg-emerald-700 transition-colors shadow-sm whitespace-nowrap">
+                  <UploadCloud className="h-3.5 w-3.5 shrink-0" />
+                  <span>เลือกไฟล์</span>
                 </div>
               </div>
 
               {/* 3. ขาย */}
               <div
                 onClick={() => triggerBrowseForType("SALE")}
-                className={`group cursor-pointer rounded-2xl p-4 border-2 transition-all hover:scale-[1.02] ${
+                className={`group flex min-w-0 cursor-pointer flex-col rounded-2xl p-3.5 border-2 transition-all hover:scale-[1.01] ${
                   selectedFileType === "SALE" && selectedFile
                     ? "border-purple-600 bg-purple-50/60 shadow-lg ring-2 ring-purple-500/30"
                     : "border-gray-200 hover:border-purple-500 hover:bg-purple-50/30 hover:shadow-md"
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
-                      <TrendingUp className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-sm group-hover:text-purple-600">
-                        3. ไฟล์ขาย
-                      </h3>
-                      <p className="text-[11px] text-gray-500 font-mono">ขาย261069.xls / 3.ขาย.xls</p>
-                    </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-purple-100 text-purple-600 group-hover:bg-purple-600 group-hover:text-white transition-colors">
+                    <TrendingUp className="h-4 w-4" />
                   </div>
-                  <span className="rounded-full bg-purple-100 px-2 py-0.5 text-[10px] font-bold text-purple-700">
-                    Daily Sale
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="truncate font-bold text-gray-900 text-sm group-hover:text-purple-600">
+                        3. ขาย
+                      </h3>
+                      <span
+                        className="shrink-0 rounded-md bg-purple-100 px-1.5 py-0.5 text-[9px] font-bold text-purple-700 whitespace-nowrap"
+                        title="Daily Sale Report"
+                      >
+                        Sale
+                      </span>
+                    </div>
+                    <p
+                      className="truncate text-[11px] text-gray-500 font-mono"
+                      title={latestFiles.SALE?.fileName || "ยังไม่ได้นำเข้า"}
+                    >
+                      {latestFiles.SALE?.fileName || "ยังไม่ได้นำเข้า"}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
-                  <p>• <b>Col B</b>: รหัสสินค้า</p>
-                  <p>• <b>Col E</b>: คำนวณสูตร <b>(E/3)+E</b></p>
-                  <p className="text-purple-700 font-bold">➔ ปรับปรุงเป็นยอดขาย</p>
+                <div className="mt-2.5 flex-1 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2 rounded-xl border border-gray-100">
+                  <p className="truncate">• <b>Col B</b>: รหัสสินค้า</p>
+                  <p className="truncate">• <b>Col E</b>: สูตร <b>(E/3)+E</b></p>
+                  <p className="truncate text-purple-700 font-bold">➔ ปรับปรุงเป็นยอดขาย</p>
                 </div>
 
-                <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-purple-600 py-2 text-xs font-bold text-white group-hover:bg-purple-700 transition-colors shadow-sm">
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก ขาย / 3.ขาย.xls</span>
+                <div className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-purple-600 py-2 text-xs font-bold text-white group-hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap">
+                  <UploadCloud className="h-3.5 w-3.5 shrink-0" />
+                  <span>เลือกไฟล์</span>
                 </div>
               </div>
 
               {/* 4. ปริมาณการใช้ & คู่ค้า */}
               <div
                 onClick={() => triggerBrowseForType("USAGE")}
-                className={`group cursor-pointer rounded-2xl p-4 border-2 transition-all hover:scale-[1.02] ${
+                className={`group flex min-w-0 cursor-pointer flex-col rounded-2xl p-3.5 border-2 transition-all hover:scale-[1.01] ${
                   selectedFileType === "USAGE" && selectedFile
                     ? "border-amber-600 bg-amber-50/60 shadow-lg ring-2 ring-amber-500/30"
                     : "border-gray-200 hover:border-amber-500 hover:bg-amber-50/30 hover:shadow-md"
                 }`}
               >
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-2.5">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-100 text-amber-700 group-hover:bg-amber-600 group-hover:text-white transition-colors">
-                      <Calculator className="h-5 w-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-bold text-gray-900 text-sm group-hover:text-amber-700">
-                        4. ปริมาณการใช้
-                      </h3>
-                      <p className="text-[11px] text-gray-500 font-mono">ปริมาณการใช้.xls (Sheet เหลือ)</p>
-                    </div>
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-100 text-amber-700 group-hover:bg-amber-600 group-hover:text-white transition-colors">
+                    <Calculator className="h-4 w-4" />
                   </div>
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">
-                    Sheet เหลือ & ปริมาณการใช้
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <h3 className="truncate font-bold text-gray-900 text-sm group-hover:text-amber-700">
+                        4. ปริมาณใช้
+                      </h3>
+                      <span
+                        className="shrink-0 rounded-md bg-amber-100 px-1.5 py-0.5 text-[9px] font-bold text-amber-800 whitespace-nowrap"
+                        title="Sheet เหลือ & ปริมาณการใช้"
+                      >
+                        Usage
+                      </span>
+                    </div>
+                    <p
+                      className="truncate text-[11px] text-gray-500 font-mono"
+                      title={latestFiles.USAGE?.fileName || "ยังไม่ได้นำเข้า"}
+                    >
+                      {latestFiles.USAGE?.fileName || "ยังไม่ได้นำเข้า"}
+                    </p>
+                  </div>
                 </div>
 
-                <div className="mt-3 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2.5 rounded-xl border border-gray-100">
-                  <p>• <b>Col E, F</b>: ยอดคงเหลือ & จุดสั่งซื้อ MIN</p>
-                  <p>• <b>เดือน 1, 2, 3</b>: ยอดใช้ย้อนหลัง 3 เดือน</p>
-                  <p className="text-amber-800 font-bold">➔ ดึงคงเหลือ + หมวด + บริษัทคู่ค้า</p>
+                <div className="mt-2.5 flex-1 space-y-0.5 text-[11px] text-gray-600 bg-white/80 p-2 rounded-xl border border-gray-100">
+                  <p className="truncate">• <b>Col E, F</b>: คงเหลือ & MIN</p>
+                  <p className="truncate">• <b>เดือน 1–3</b>: ยอดใช้ย้อนหลัง</p>
+                  <p className="truncate text-amber-800 font-bold">➔ คงเหลือ + หมวด + คู่ค้า</p>
                 </div>
 
-                <div className="mt-3 flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 py-2 text-xs font-bold text-white group-hover:bg-amber-700 transition-colors shadow-sm">
-                  <UploadCloud className="h-3.5 w-3.5" />
-                  <span>เลือก ปริมาณการใช้.xls</span>
+                <div className="mt-2.5 flex items-center justify-center gap-1.5 rounded-xl bg-amber-600 py-2 text-xs font-bold text-white group-hover:bg-amber-700 transition-colors shadow-sm whitespace-nowrap">
+                  <UploadCloud className="h-3.5 w-3.5 shrink-0" />
+                  <span>เลือกไฟล์</span>
                 </div>
               </div>
             </div>
@@ -1651,9 +1833,25 @@ export default function InventoryMasterPage() {
                             : "❌ โครงสร้างไฟล์ไม่ถูกต้อง ไม่อนุญาตให้นำเข้า"}
                         </h3>
                         {validationResult.isValid && (
-                          <span className="rounded-full bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-sm">
-                            งวด: {formatPeriodLabel(importPeriod)}
-                          </span>
+                          <>
+                            <span className="rounded-full bg-blue-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-sm">
+                              งวด: {formatPeriodLabel(importPeriod)}
+                            </span>
+                            <span
+                              className={`rounded-full px-2.5 py-0.5 text-xs font-bold shadow-sm ${
+                                importDataGroup === "MAINSTORE"
+                                  ? "bg-sky-600 text-white"
+                                  : "bg-amber-600 text-white"
+                              }`}
+                            >
+                              {DATA_GROUP_LABELS[importDataGroup]}
+                            </span>
+                            {importDataDate && (
+                              <span className="rounded-full bg-slate-600 text-white px-2.5 py-0.5 text-xs font-bold shadow-sm">
+                                วันที่กำกับ: {formatDataDate(importDataDate)}
+                              </span>
+                            )}
+                          </>
                         )}
                       </div>
                       <p className="text-xs text-gray-600 mt-0.5">
@@ -1662,7 +1860,8 @@ export default function InventoryMasterPage() {
                         <b className="text-emerald-700 font-bold">
                           {formatNum(validationResult.validRows)}
                         </b>{" "}
-                        แถว (จะบันทึกลงในงวด <b>{formatPeriodLabel(importPeriod)}</b> โดยไม่กระทบงวดอื่น)
+                        แถว (บันทึกลงงวด <b>{formatPeriodLabel(importPeriod)}</b> · กลุ่ม{" "}
+                        <b>{DATA_GROUP_LABELS[importDataGroup]}</b> โดยไม่กระทบกลุ่ม/งวดอื่น)
                       </p>
                     </div>
                   </div>
@@ -1719,7 +1918,10 @@ export default function InventoryMasterPage() {
                           ) : (
                             <>
                               <Check className="h-3.5 w-3.5" />
-                              <span>บันทึกเข้างวด [{importPeriod}] ({formatNum(validationResult.validRows)})</span>
+                              <span>
+                                บันทึก [{importPeriod}] · {DATA_GROUP_LABELS[importDataGroup]} (
+                                {formatNum(validationResult.validRows)})
+                              </span>
                             </>
                           )}
                         </button>
@@ -2282,6 +2484,15 @@ export default function InventoryMasterPage() {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
             <div className="text-xs text-gray-500 font-medium">
               แสดงประวัติและชุดข้อมูลที่นำเข้าทั้งหมด ({batches.length} ชุด)
+              <span
+                className={`ml-2 font-bold px-2 py-0.5 rounded-md ${
+                  selectedDataGroup === "MAINSTORE"
+                    ? "text-sky-800 bg-sky-50"
+                    : "text-amber-800 bg-amber-50"
+                }`}
+              >
+                {DATA_GROUP_LABELS[selectedDataGroup]}
+              </span>
               {selectedPeriod !== "ALL" && (
                 <span className="ml-2 font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md">
                   (เฉพาะงวด: {formatPeriodLabel(selectedPeriod === "LATEST" ? (availablePeriods[0] || currentMonthStr) : selectedPeriod)})
@@ -2316,7 +2527,9 @@ export default function InventoryMasterPage() {
               <thead className="bg-gray-50 text-gray-800 font-semibold border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3">งวดประจำเดือน</th>
-                  <th className="px-4 py-3">วันที่และเวลานำเข้า</th>
+                  <th className="px-4 py-3">กลุ่ม</th>
+                  <th className="px-4 py-3">วันที่กำกับ</th>
+                  <th className="px-4 py-3">วันที่นำเข้า</th>
                   <th className="px-4 py-3">ประเภทไฟล์</th>
                   <th className="px-4 py-3">ชื่อไฟล์</th>
                   <th className="px-4 py-3 text-right">จำนวนแถวที่นำเข้า</th>
@@ -2327,8 +2540,8 @@ export default function InventoryMasterPage() {
               <tbody className="divide-y divide-gray-200">
                 {batches.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-gray-500">
-                      ไม่พบประวัติการนำเข้าในงวดนี้
+                    <td colSpan={9} className="px-4 py-8 text-center text-gray-500">
+                      ไม่พบประวัติการนำเข้าในงวด/กลุ่มนี้
                     </td>
                   </tr>
                 ) : (
@@ -2338,6 +2551,20 @@ export default function InventoryMasterPage() {
                         <span className="rounded-lg bg-blue-50 text-blue-800 border border-blue-200 px-2 py-0.5 text-xs font-bold">
                           📅 {formatPeriodLabel(batch.period || "-")}
                         </span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                            batch.dataGroup === "PASDU"
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-sky-100 text-sky-800"
+                          }`}
+                        >
+                          {DATA_GROUP_LABELS[(batch.dataGroup as InventoryDataGroup) || "MAINSTORE"]}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 font-mono text-gray-700">
+                        {formatDataDate(batch.dataDate)}
                       </td>
                       <td className="px-4 py-3 font-mono text-gray-700">
                         {new Date(batch.createdAt).toLocaleString("th-TH")}

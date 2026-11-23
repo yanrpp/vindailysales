@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { parseDataGroup, DATA_GROUP_LABELS } from "@/lib/inventory-data-group";
 
 export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const fileType = searchParams.get("fileType"); // "BALANCE" | "DISPENSE" | "SALE" | "USAGE" | "ALL"
     const period = searchParams.get("period")?.trim(); // งวด เช่น "2026-10"
+    const rawGroup = searchParams.get("dataGroup")?.trim();
+    const dataGroup = rawGroup && rawGroup !== "ALL" ? parseDataGroup(rawGroup) : null;
 
     if (!fileType) {
       return NextResponse.json(
@@ -27,6 +30,9 @@ export async function DELETE(req: NextRequest) {
     if (period && period !== "ALL") {
       whereClause.period = period;
     }
+    if (dataGroup) {
+      whereClause.dataGroup = dataGroup;
+    }
 
     const res = await prisma.importBatch.deleteMany({
       where: whereClause,
@@ -44,10 +50,11 @@ export async function DELETE(req: NextRequest) {
         : "4. ปริมาณการใช้ & คู่ค้า";
 
     const periodText = period && period !== "ALL" ? ` ในงวด [${period}]` : "";
+    const groupText = dataGroup ? ` กลุ่ม [${DATA_GROUP_LABELS[dataGroup]}]` : "";
 
     return NextResponse.json({
       success: true,
-      message: `ลบข้อมูล "${typeName}"${periodText} เรียบร้อยแล้ว (${res.count} ชุดข้อมูล)`,
+      message: `ลบข้อมูล "${typeName}"${groupText}${periodText} เรียบร้อยแล้ว (${res.count} ชุดข้อมูล)`,
       deletedBatches: res.count,
     });
   } catch (error: any) {

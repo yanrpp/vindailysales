@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState, useRef, useCallback } from "react";
 import { useAuth } from "@/lib/auth/auth-context";
 import { Button } from "@/components/ui/button";
 import { User } from "@/lib/auth/user-storage";
@@ -12,10 +12,14 @@ export function PendingApprovalNotification() {
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const abortRef = useRef<AbortController | null>(null);
 
-  // โหลดรายการผู้ใช้ที่รอการอนุมัติ
-  const loadPendingUsers = async () => {
+  const loadPendingUsers = useCallback(async () => {
     if (!isAdmin || !token) return;
+
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
 
     setLoading(true);
     try {
@@ -23,40 +27,43 @@ export function PendingApprovalNotification() {
         headers: {
           Authorization: `Bearer ${token}`,
         },
+        signal: controller.signal,
       });
 
-      const data = await response.json();
+      if (!response.ok) return;
 
-      if (response.ok && data.success) {
-        // กรองเฉพาะผู้ใช้ที่รอการอนุมัติ
+      const data = await response.json();
+      if (data.success && Array.isArray(data.users)) {
         const pending = data.users.filter((user: User) => !user.isApproved);
         setPendingUsers(pending);
       }
     } catch (err) {
-      console.error("Failed to load pending users:", err);
+      // เงียบเมื่อถูกยกเลิก / เซิร์ฟเวอร์รีสตาร์ท / network หลุดชั่วคราว
+      if (err instanceof DOMException && err.name === "AbortError") return;
+      if (err instanceof TypeError && String(err.message).includes("fetch")) return;
     } finally {
-      setLoading(false);
-    }
-  };
-
-  // โหลดข้อมูลเมื่อ component mount และเมื่อ isAdmin หรือ token เปลี่ยน
-  useEffect(() => {
-    if (isAdmin && token) {
-      loadPendingUsers();
-      
-      // Refresh เมื่อ focus กลับมาที่หน้าต่าง (เมื่อผู้ใช้กลับมาจากหน้า users)
-      const handleFocus = () => {
-        loadPendingUsers();
-      };
-      window.addEventListener("focus", handleFocus);
-      
-      return () => {
-        window.removeEventListener("focus", handleFocus);
-      };
+      if (!controller.signal.aborted) {
+        setLoading(false);
+      }
     }
   }, [isAdmin, token]);
 
-  // ปิด dropdown เมื่อคลิกข้างนอก
+  useEffect(() => {
+    if (!isAdmin || !token) return;
+
+    loadPendingUsers();
+
+    const handleFocus = () => {
+      loadPendingUsers();
+    };
+    window.addEventListener("focus", handleFocus);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      abortRef.current?.abort();
+    };
+  }, [isAdmin, token, loadPendingUsers]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -73,14 +80,12 @@ export function PendingApprovalNotification() {
     };
   }, [isOpen]);
 
-  // ไม่แสดงถ้าไม่ใช่ admin หรือไม่มีผู้ใช้ที่รอการอนุมัติ
   if (!isAdmin || pendingUsers.length === 0) {
     return null;
   }
 
   return (
     <div className="relative" ref={dropdownRef}>
-      {/* Notification Badge Button */}
       <Button
         variant="outline"
         size="sm"
@@ -102,14 +107,11 @@ export function PendingApprovalNotification() {
           <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
         </svg>
         <span className="ml-2 font-semibold">{pendingUsers.length}</span>
-        {/* Badge indicator */}
         <span className="absolute -top-1 -right-1 h-4 w-4 bg-red-500 rounded-full border-2 border-white"></span>
       </Button>
 
-      {/* Dropdown Menu */}
       {isOpen && (
         <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-lg border border-gray-200 z-50 max-h-96 overflow-hidden flex flex-col">
-          {/* Header */}
           <div className="px-4 py-3 border-b border-gray-200 bg-yellow-50">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-yellow-900">
@@ -125,7 +127,6 @@ export function PendingApprovalNotification() {
             </div>
           </div>
 
-          {/* User List */}
           <div className="overflow-y-auto max-h-80">
             {loading ? (
               <div className="px-4 py-8 text-center text-sm text-gray-500">
@@ -187,7 +188,6 @@ export function PendingApprovalNotification() {
             )}
           </div>
 
-          {/* Footer */}
           <div className="px-4 py-3 border-t border-gray-200 bg-gray-50">
             <Link href="/users">
               <Button
@@ -205,4 +205,3 @@ export function PendingApprovalNotification() {
     </div>
   );
 }
-

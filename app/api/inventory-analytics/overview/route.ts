@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fixThaiEncoding } from "@/lib/excel-validator";
+import { parseDataGroup } from "@/lib/inventory-data-group";
 
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    const tab = searchParams.get("tab") || "overview"; // "overview" | "balance" | "dispense" | "sale" | "usage" | "batches"
+    const tab = searchParams.get("tab") || "overview"; // "overview" | "balance" | "dispense" | "sale" | "usage" | "batches" | "upload"
     const search = searchParams.get("search")?.trim() || "";
     const selectedCategory = searchParams.get("category")?.trim() || "";
     const selectedSupplier = searchParams.get("supplier")?.trim() || "";
@@ -13,6 +14,7 @@ export async function GET(req: NextRequest) {
     const stockStatus = searchParams.get("stockStatus")?.trim() || "ALL"; // "ALL" | "NEED_ORDER" | "SUFFICIENT"
     const sortBy = searchParams.get("sortBy")?.trim() || "seq";
     const sortOrder = searchParams.get("sortOrder")?.toLowerCase() === "desc" ? "desc" : "asc";
+    const dataGroup = parseDataGroup(searchParams.get("dataGroup"));
 
     const isAll = searchParams.get("all") === "true";
     const page = Math.max(1, parseInt(searchParams.get("page") || "1"));
@@ -21,9 +23,9 @@ export async function GET(req: NextRequest) {
       : Math.max(10, Math.min(200, parseInt(searchParams.get("limit") || "50")));
     const skip = limit !== undefined ? (page - 1) * limit : undefined;
 
-    // หา Available Periods ทั้งหมดที่มีในระบบ
+    // หา Available Periods ทั้งหมดที่มีในระบบ (กรองตามกลุ่มข้อมูล)
     const distinctBatches = await prisma.importBatch.findMany({
-      where: { period: { not: null } },
+      where: { period: { not: null }, dataGroup },
       select: { period: true },
       distinct: ["period"],
       orderBy: { period: "desc" },
@@ -44,11 +46,58 @@ export async function GET(req: NextRequest) {
       selectedPeriod = availablePeriods.length > 0 ? availablePeriods[0] : currentMonthStr;
     }
 
-    const periodFilter = selectedPeriod !== "ALL" ? { period: selectedPeriod } : {};
+    const periodFilter =
+      selectedPeriod !== "ALL"
+        ? { period: selectedPeriod, dataGroup }
+        : { dataGroup };
+
+    // ชื่อไฟล์ล่าสุดที่นำเข้าแยกตามประเภท (ในกลุ่มข้อมูลที่เลือก)
+    const fileTypes = ["BALANCE", "DISPENSE", "SALE", "USAGE"] as const;
+    const latestFileEntries = await Promise.all(
+      fileTypes.map(async (fileType) => {
+        const batch = await prisma.importBatch.findFirst({
+          where: { fileType, dataGroup },
+          orderBy: { createdAt: "desc" },
+          select: { fileName: true, createdAt: true, period: true, dataDate: true, dataGroup: true },
+        });
+        return [
+          fileType,
+          batch
+            ? {
+                fileName: batch.fileName,
+                createdAt: batch.createdAt,
+                period: batch.period,
+                dataDate: batch.dataDate,
+                dataGroup: batch.dataGroup,
+              }
+            : null,
+        ] as const;
+      })
+    );
+    const latestFiles = Object.fromEntries(latestFileEntries) as Record<
+      (typeof fileTypes)[number],
+      {
+        fileName: string;
+        createdAt: Date;
+        period: string | null;
+        dataDate: Date | null;
+        dataGroup: string;
+      } | null
+    >;
+
+    // Upload tab: ใช้เฉพาะชื่อไฟล์ล่าสุด
+    if (tab === "upload") {
+      return NextResponse.json({
+        latestFiles,
+        selectedPeriod,
+        selectedDataGroup: dataGroup,
+        availablePeriods,
+      });
+    }
 
     // 1. Tab Batches
     if (tab === "batches") {
-      const batchWhere: any = {};
+      const batchWhere: any = { dataGroup };
       if (selectedPeriod !== "ALL") {
         batchWhere.period = selectedPeriod;
       }
@@ -62,7 +111,9 @@ export async function GET(req: NextRequest) {
 
       return NextResponse.json({
         batches,
+        latestFiles,
         selectedPeriod,
+        selectedDataGroup: dataGroup,
         availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
@@ -99,6 +150,7 @@ export async function GET(req: NextRequest) {
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
         selectedPeriod,
+        selectedDataGroup: dataGroup,
         availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
@@ -135,6 +187,7 @@ export async function GET(req: NextRequest) {
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
         selectedPeriod,
+        selectedDataGroup: dataGroup,
         availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
@@ -171,6 +224,7 @@ export async function GET(req: NextRequest) {
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
         })),
         selectedPeriod,
+        selectedDataGroup: dataGroup,
         availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
@@ -211,6 +265,7 @@ export async function GET(req: NextRequest) {
           supplier: item.supplier ? fixThaiEncoding(item.supplier) : null,
         })),
         selectedPeriod,
+        selectedDataGroup: dataGroup,
         availablePeriods,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
@@ -474,13 +529,14 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
       if (item.supplier) supplierSet.add(item.supplier);
       if (item.unit && item.unit !== "-") unitSet.add(item.unit);
 
-      // ถ้าไม่มี usageMonth3 ในไฟล์ 4 ให้นำ (ตัดจ่ายปรับปรุง + ขายปรับปรุง) มาใช้เป็นปริมาณการใช้เดือนล่าสุด
-      const currentPeriodUsage = (item.dispenseAdjustedQty || 0) + (item.saleAdjustedQty || 0);
-      const m3 = item.usageMonth3 !== null && item.usageMonth3 !== undefined ? item.usageMonth3 : (currentPeriodUsage > 0 ? currentPeriodUsage : null);
+      // เดือนนี้ (ตัด+ขาย) = ยอดตัดจ่ายปรับปรุง + ยอดขายปรับปรุง (ไม่ใช้ usageMonth3 จากไฟล์ 4)
+      const m3 = Number(
+        ((item.dispenseAdjustedQty || 0) + (item.saleAdjustedQty || 0)).toFixed(2)
+      );
 
       const u1 = item.usageMonth1 !== null && item.usageMonth1 !== undefined ? item.usageMonth1 : 0;
       const u2 = item.usageMonth2 !== null && item.usageMonth2 !== undefined ? item.usageMonth2 : 0;
-      const u3 = m3 !== null && m3 !== undefined ? m3 : 0;
+      const u3 = m3;
 
       const maxUsage = Math.max(u1, u2, u3);
       const avgUsage = Number(((u1 + u2 + u3) / 3).toFixed(2));
@@ -586,6 +642,7 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
     return NextResponse.json({
       items: paginatedItems,
       selectedPeriod,
+      selectedDataGroup: dataGroup,
       availablePeriods,
       metrics: {
         totalUniqueCodes: itemMap.size,
@@ -596,6 +653,7 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
         needOrderCount,
         sufficientCount,
       },
+      latestFiles,
       filterOptions: {
         categories: Array.from(categorySet).sort(),
         suppliers: Array.from(supplierSet).sort(),

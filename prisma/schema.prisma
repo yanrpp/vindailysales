@@ -148,7 +148,9 @@ model ProductStockRecord {
 // 8. Import Batch (ประวัติการนำเข้าไฟล์รายงาน)
 model ImportBatch {
   id           String              @id @default(uuid())
-  period       String?             @map("period") // เช่น "2026-10", "2026-11"
+  period       String?             @map("period") // เช่น "2026-10", "2026-11" (งวดรายเดือน)
+  dataDate     DateTime?           @map("data_date") // วันที่กำกับของไฟล์/ข้อมูล (ไม่ใช่วันที่นำเข้า)
+  dataGroup    String              @default("MAINSTORE") @map("data_group") // "MAINSTORE" | "PASDU"
   fileType     String              @map("file_type") // "BALANCE" | "DISPENSE" | "SALE" | "USAGE"
   fileName     String              @map("file_name")
   totalRows    Int                 @default(0) @map("total_rows")
@@ -156,15 +158,17 @@ model ImportBatch {
   fileSize     Int?                @map("file_size")
   uploadedBy   String?             @map("uploaded_by")
   note         String?
-  createdAt    DateTime            @default(now()) @map("created_at")
+  createdAt    DateTime            @default(now()) @map("created_at") // วันที่นำเข้าจริง
   balances     InventoryBalance[]
   dispenses    InventoryDispense[]
   sales        InventorySale[]
   usages       InventoryUsage[]
 
   @@index([period])
+  @@index([dataGroup])
   @@index([fileType, createdAt])
   @@index([fileType, period])
+  @@index([fileType, period, dataGroup])
   @@map("import_batches")
 }
 
@@ -174,6 +178,7 @@ model InventoryBalance {
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
   period      String?      @map("period")
+  dataGroup   String       @default("MAINSTORE") @map("data_group") // "MAINSTORE" | "PASDU"
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col D
@@ -187,6 +192,8 @@ model InventoryBalance {
   @@index([itemCode])
   @@index([batchId])
   @@index([period])
+  @@index([dataGroup])
+  @@index([period, dataGroup])
   @@index([period, itemCode])
   @@map("inventory_balances")
 }
@@ -197,6 +204,7 @@ model InventoryDispense {
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
   period      String?      @map("period")
+  dataGroup   String       @default("MAINSTORE") @map("data_group") // "MAINSTORE" | "PASDU"
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col F
@@ -210,6 +218,8 @@ model InventoryDispense {
   @@index([itemCode])
   @@index([batchId])
   @@index([period])
+  @@index([dataGroup])
+  @@index([period, dataGroup])
   @@index([period, itemCode])
   @@map("inventory_dispenses")
 }
@@ -220,6 +230,7 @@ model InventorySale {
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
   period      String?      @map("period")
+  dataGroup   String       @default("MAINSTORE") @map("data_group") // "MAINSTORE" | "PASDU"
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col F
@@ -233,6 +244,8 @@ model InventorySale {
   @@index([itemCode])
   @@index([batchId])
   @@index([period])
+  @@index([dataGroup])
+  @@index([period, dataGroup])
   @@index([period, itemCode])
   @@map("inventory_sales")
 }
@@ -243,6 +256,7 @@ model InventoryUsage {
   batchId     String       @map("batch_id")
   batch       ImportBatch  @relation(fields: [batchId], references: [id], onDelete: Cascade)
   period      String?      @map("period")
+  dataGroup   String       @default("MAINSTORE") @map("data_group") // "MAINSTORE" | "PASDU"
   itemCode    String       @map("item_code") // Col B (ตัวเชื่อม)
   itemName    String?      @map("item_name") // Col C
   unit        String?      // Col D
@@ -261,6 +275,8 @@ model InventoryUsage {
   @@index([supplier])
   @@index([batchId])
   @@index([period])
+  @@index([dataGroup])
+  @@index([period, dataGroup])
   @@index([period, itemCode])
   @@map("inventory_usages")
 }

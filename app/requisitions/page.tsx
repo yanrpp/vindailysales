@@ -789,27 +789,8 @@ export default function RequisitionsPage() {
         )}
       </div>
 
-      {/* View Mode Tabs (ตามใบเบิก / รายรายการ) */}
+      {/* View Mode Tabs (รายรายการ / ตามใบเบิก) */}
       <div className="flex items-center gap-1 border-b border-slate-200">
-        <button
-          type="button"
-          onClick={() => switchView("slips")}
-          className={`inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
-            viewMode === "slips"
-              ? "border-blue-600 text-blue-700"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          <ClipboardList className="h-4 w-4" />
-          ตามใบเบิก
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs ${
-              viewMode === "slips" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
-            }`}
-          >
-            {stats.totalRequisitions.toLocaleString()}
-          </span>
-        </button>
         <button
           type="button"
           onClick={() => switchView("items")}
@@ -827,6 +808,25 @@ export default function RequisitionsPage() {
             }`}
           >
             {stats.totalRows.toLocaleString()}
+          </span>
+        </button>
+        <button
+          type="button"
+          onClick={() => switchView("slips")}
+          className={`inline-flex items-center gap-2 border-b-2 px-4 py-2.5 text-sm font-semibold transition ${
+            viewMode === "slips"
+              ? "border-blue-600 text-blue-700"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          <ClipboardList className="h-4 w-4" />
+          ตามใบเบิก
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs ${
+              viewMode === "slips" ? "bg-blue-100 text-blue-700" : "bg-slate-100 text-slate-500"
+            }`}
+          >
+            {stats.totalRequisitions.toLocaleString()}
           </span>
         </button>
       </div>
