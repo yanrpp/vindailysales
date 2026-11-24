@@ -1436,7 +1436,7 @@ export default function InventoryMasterPage() {
             {/* Status & Export Actions */}
             <div className="lg:col-span-3 flex items-center justify-end gap-2">
               <button
-                onClick={fetchTabData}
+                onClick={() => fetchTabData()}
                 className="p-2 rounded-xl border border-gray-300 text-gray-600 hover:bg-gray-50"
                 title="รีเฟรชข้อมูล"
               >
@@ -1950,7 +1950,7 @@ export default function InventoryMasterPage() {
       )}
 
       {/* TAB 2: UPLOAD (เลิกใช้ — นำเข้าในหน้าข้อมูลแต่ละประเภทแทน) */}
-      {false && activeTab === "upload" && (
+      {activeTab === "upload" && (
         <div className="space-y-6">
           {/* ตั้งค่าก่อนนำเข้า — วันที่ของข้อมูลเป็นตัวกำหนดชุดในงวด */}
           <div className="rounded-2xl bg-white p-5 border border-gray-200 shadow-sm space-y-4">
