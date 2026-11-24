@@ -12,6 +12,8 @@ export async function GET(req: NextRequest) {
     const selectedSupplier = searchParams.get("supplier")?.trim() || "";
     const selectedUnit = searchParams.get("unit")?.trim() || "";
     const stockStatus = searchParams.get("stockStatus")?.trim() || "ALL"; // "ALL" | "NEED_ORDER" | "SUFFICIENT"
+    // balance tab: "HAS_VALUE" (default) | "MIN_ZERO" (minQty null หรือ 0)
+    const minFilter = searchParams.get("minFilter")?.trim() || "HAS_VALUE";
     const sortBy = searchParams.get("sortBy")?.trim() || "seq";
     const sortOrder = searchParams.get("sortOrder")?.toLowerCase() === "desc" ? "desc" : "asc";
     const dataGroup = parseDataGroup(searchParams.get("dataGroup"));
@@ -121,13 +123,23 @@ export async function GET(req: NextRequest) {
 
     // 2. Tab Balance
     if (tab === "balance") {
+      const minQtyFilter =
+        minFilter === "MIN_ZERO"
+          ? { OR: [{ minQty: null }, { minQty: 0 }] }
+          : { minQty: { gt: 0 } };
+
       const where: any = {
         ...periodFilter,
+        ...minQtyFilter,
         ...(search
           ? {
-              OR: [
-                { itemCode: { contains: search, mode: "insensitive" } },
-                { itemName: { contains: search, mode: "insensitive" } },
+              AND: [
+                {
+                  OR: [
+                    { itemCode: { contains: search, mode: "insensitive" } },
+                    { itemName: { contains: search, mode: "insensitive" } },
+                  ],
+                },
               ],
             }
           : {}),

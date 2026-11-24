@@ -155,6 +155,8 @@ export default function InventoryMasterPage() {
   const [selectedSupplier, setSelectedSupplier] = useState("ALL");
   const [selectedUnit, setSelectedUnit] = useState("ALL");
   const [stockStatus, setStockStatus] = useState<"ALL" | "NEED_ORDER" | "SUFFICIENT">("ALL");
+  // balance tab: false = แสดงเฉพาะรายการที่มี Min Stock, true = แสดง min เป็น 0 / ว่าง
+  const [showMinZero, setShowMinZero] = useState(false);
 
   const [currentPage, setCurrentPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
@@ -173,7 +175,7 @@ export default function InventoryMasterPage() {
     } else {
       fetchTabData();
     }
-  }, [activeTab, selectedPeriod, selectedDataGroup, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, sortBy, sortOrder]);
+  }, [activeTab, selectedPeriod, selectedDataGroup, currentPage, searchTerm, selectedCategory, selectedSupplier, selectedUnit, stockStatus, showMinZero, sortBy, sortOrder]);
 
   // เมื่อสลับกลุ่มบนหน้าอัปโหลด ให้รีเฟรชชื่อไฟล์ล่าสุดของกลุ่มนั้น
   useEffect(() => {
@@ -218,6 +220,9 @@ export default function InventoryMasterPage() {
         page: String(currentPage),
         limit: "50",
       });
+      if (activeTab === "balance") {
+        queryParams.set("minFilter", showMinZero ? "MIN_ZERO" : "HAS_VALUE");
+      }
 
       const res = await fetch(`/api/inventory-analytics/overview?${queryParams.toString()}`);
       const data = await res.json();
@@ -528,6 +533,9 @@ export default function InventoryMasterPage() {
         sortOrder,
         all: "true",
       });
+      if (activeTab === "balance") {
+        queryParams.set("minFilter", showMinZero ? "MIN_ZERO" : "HAS_VALUE");
+      }
 
       const res = await fetch(`/api/inventory-analytics/overview?${queryParams.toString()}`);
       const data = await res.json();
@@ -2015,21 +2023,45 @@ export default function InventoryMasterPage() {
       {/* TAB 3: BALANCE */}
       {activeTab === "balance" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="ค้นหารายการคงเหลือ..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
-              />
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+              <div className="relative flex-1 max-w-md min-w-[200px]">
+                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหารายการคงเหลือ..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
+                />
+              </div>
+              <div className="text-xs text-gray-600 whitespace-nowrap">
+                แสดงหน้า <b>{currentPage}</b> จาก <b>{totalPages}</b> (ทั้งหมด{" "}
+                <b>{formatNum(totalCount)}</b> รายการ)
+              </div>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  setShowMinZero((v) => !v);
+                  setCurrentPage(1);
+                }}
+                className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2 text-xs font-semibold transition-colors ${
+                  showMinZero
+                    ? "border-amber-400 bg-amber-100 text-amber-900 hover:bg-amber-200"
+                    : "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                }`}
+                title={
+                  showMinZero
+                    ? "กำลังแสดงรายการที่ Min Stock เป็น 0 หรือว่าง — คลิกเพื่อกลับไปแสดงรายการที่มีค่า"
+                    : "แสดงเฉพาะรายการที่ Min Stock เป็น 0 หรือว่าง (-)"
+                }
+              >
+                <span>min เป็น 0</span>
+              </button>
               <button
                 onClick={() => handleClearData("BALANCE")}
                 disabled={isClearing}
@@ -2249,19 +2281,25 @@ export default function InventoryMasterPage() {
       {/* TAB 5: SALE */}
       {activeTab === "sale" && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
-              <input
-                type="text"
-                placeholder="ค้นหารายการขาย..."
-                value={searchTerm}
-                onChange={(e) => {
-                  setSearchTerm(e.target.value);
-                  setCurrentPage(1);
-                }}
-                className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
-              />
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-gray-200 shadow-sm">
+            <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+              <div className="relative flex-1 max-w-md min-w-[200px]">
+                <Search className="absolute left-3.5 top-2.5 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="ค้นหารายการขาย..."
+                  value={searchTerm}
+                  onChange={(e) => {
+                    setSearchTerm(e.target.value);
+                    setCurrentPage(1);
+                  }}
+                  className="w-full rounded-xl border border-gray-300 pl-10 pr-4 py-2 text-xs md:text-sm focus:outline-none"
+                />
+              </div>
+              <div className="text-xs text-gray-600 whitespace-nowrap">
+                แสดงหน้า <b>{currentPage}</b> จาก <b>{totalPages}</b> (ทั้งหมด{" "}
+                <b>{formatNum(totalCount)}</b> รายการ)
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button

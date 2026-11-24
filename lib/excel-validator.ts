@@ -566,9 +566,10 @@ export function parseAndValidateDispense(buffer: Buffer | ArrayBuffer): Validati
  * ตรวจสอบและ Parse ไฟล์ 3.ขาย.xls
  * กฎ:
  * - Sheet 'Daily Sale Report'
- * - คอลัมน์ B (ตัวเชื่อม)
+ * - คอลัมน์ B (ตัวเชื่อม / Stock code)
  * - คอลัมน์ E: คำนวณ (E / 3) + E
- * - เงื่อนไข: เอาเฉพาะแถวที่มีข้อมูลใน คอลัมน์ B หรือ คอลัมน์ E (หรืออย่างใดอย่างหนึ่ง)
+ * - เงื่อนไข: ต้องมีทั้งรหัสสินค้า (Col B) และยอดขาย (Col E)
+ * - ข้ามแถวสรุป/หัวหมวด เช่น "1503 Items", "สินค้าฝากขาย", ชื่อบัญชียา
  */
 export function parseAndValidateSale(buffer: Buffer | ArrayBuffer): ValidationResult {
   const errors: ValidationError[] = [];
@@ -656,21 +657,39 @@ export function parseAndValidateSale(buffer: Buffer | ArrayBuffer): ValidationRe
 
   let skippedRows = 0;
 
+  const isSaleJunkRow = (code: string, name: string | null) => {
+    const codeLower = code.toLowerCase();
+    const nameLower = (name || "").toLowerCase().trim();
+    if (!code) return true;
+    if (code === "Stock code" || code === "รหัสสินค้า") return true;
+    if (code.startsWith("รวม") || code.includes("สโตร์") || code.includes("Daily")) return true;
+    // แถวสรุปจำนวนรายการ เช่น Col B=1503, Col C=Items
+    if (nameLower === "items" || nameLower === "item") return true;
+    // หัวหมวดสินค้าในรายงาน (ไม่มีรหัสจริง)
+    if (
+      code.includes("สินค้าฝากขาย") ||
+      code.includes("บัญชียาหลัก") ||
+      code.includes("ยานอกบัญชี") ||
+      code.includes("ยาในบัญชี")
+    ) {
+      return true;
+    }
+    // รหัสที่เป็นแต่ตัวเลขล้วนมักเป็นจำนวนนับในแถวสรุป ไม่ใช่ Stock code
+    if (/^\d+$/.test(code) && (!name || nameLower === "items")) return true;
+    if (codeLower === "unknown") return true;
+    return false;
+  };
+
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i];
     if (!row || row.length === 0) continue;
 
     const colB = fixThaiEncoding(row[1]);
     const colE_raw = row[4] !== undefined && row[4] !== null && row[4] !== "" ? Number(row[4]) : null;
+    const itemName = row[2] !== undefined && row[2] !== null ? fixThaiEncoding(row[2]) : null;
 
-    // ข้าม Header
-    if (
-      colB === "Stock code" ||
-      colB === "รหัสสินค้า" ||
-      colB.startsWith("รวม") ||
-      colB.includes("สโตร์") ||
-      colB.includes("Daily")
-    ) {
+    // ข้าม Header / แถวสรุป / หัวหมวด
+    if (isSaleJunkRow(colB, itemName)) {
       skippedRows++;
       continue;
     }
@@ -678,17 +697,16 @@ export function parseAndValidateSale(buffer: Buffer | ArrayBuffer): ValidationRe
     const hasB = Boolean(colB);
     const hasE = colE_raw !== null && !isNaN(colE_raw);
 
-    // เอาเฉพาะแถวที่มีข้อมูลใน คอลัมน์ B หรือ คอลัมน์ E (หรืออย่างใดอย่างหนึ่ง)
-    if (!hasB && !hasE) {
+    // ต้องมีทั้งรหัสสินค้าและยอดใน Col E ถึงจะนับเป็นรายการขายจริง
+    if (!hasB || !hasE) {
       skippedRows++;
       continue;
     }
 
-    const itemCode = hasB ? colB : "UNKNOWN";
-    const itemName = row[2] !== undefined && row[2] !== null ? fixThaiEncoding(row[2]) : null;
+    const itemCode = colB;
     const unit = row[5] !== undefined && row[5] !== null ? fixThaiEncoding(row[5]) : null;
-    const rawQty = hasE ? colE_raw : null;
-    const adjustedQty = rawQty !== null ? calculateAdjustedQty(rawQty) : null;
+    const rawQty = colE_raw;
+    const adjustedQty = calculateAdjustedQty(rawQty);
     const saleAmount = row[6] !== undefined && !isNaN(Number(row[6])) ? Number(row[6]) : null;
     const costAmount = row[7] !== undefined && !isNaN(Number(row[7])) ? Number(row[7]) : null;
 
@@ -710,9 +728,9 @@ export function parseAndValidateSale(buffer: Buffer | ArrayBuffer): ValidationRe
         itemCode,
         itemName: itemName || "-",
         unit: unit || "-",
-        rawQty: rawQty !== null ? rawQty.toLocaleString() : "-",
-        formula: rawQty !== null ? `(${rawQty} / 3) + ${rawQty}` : "-",
-        adjustedQty: adjustedQty !== null ? adjustedQty.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "-",
+        rawQty: rawQty.toLocaleString(),
+        formula: `(${rawQty} / 3) + ${rawQty}`,
+        adjustedQty: adjustedQty.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }),
         saleAmount: saleAmount !== null ? saleAmount.toFixed(2) : "-",
         costAmount: costAmount !== null ? costAmount.toFixed(2) : "-",
       });
@@ -721,7 +739,7 @@ export function parseAndValidateSale(buffer: Buffer | ArrayBuffer): ValidationRe
 
   if (parsedData.length === 0 && errors.length === 0) {
     errors.push({
-      message: "ไม่พบแถวข้อมูลที่ตรงตามเงื่อนไข (มีข้อมูลใน Col B หรือ Col E)",
+      message: "ไม่พบแถวข้อมูลที่ตรงตามเงื่อนไข (มีรหัสสินค้าใน Col B และยอดขายใน Col E)",
       severity: "error",
     });
   }

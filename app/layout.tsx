@@ -5,9 +5,9 @@ import { AuthProvider } from "@/lib/auth/auth-context";
 export const metadata = {
   title: "Drug Management",
   icons: {
-    icon: "/img/vin.png",
-    shortcut: "/img/vin.png",
-    apple: "/img/vin.png",
+    icon: "/img/tak.svg",
+    shortcut: "/img/tak.svg",
+    apple: "/img/tak.svg",
   },
 };
 

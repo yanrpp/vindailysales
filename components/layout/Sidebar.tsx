@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
@@ -137,15 +136,11 @@ export function Sidebar() {
         {/* Logo/Brand */}
         <div className="flex h-16 items-center px-6 bg-gradient-to-r from-blue-600 to-blue-700 backdrop-blur-sm shadow-md">
           <Link href="/" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-md bg-white shadow-lg overflow-hidden">
-              <Image
-                src="/img/vin.png"
-                alt="Vin Logo"
-                width={32}
-                height={32}
-                className="object-contain"
-                priority
-              />
+            <div
+              className="flex h-8 w-8 items-center justify-center rounded-md bg-white shadow-lg overflow-hidden"
+              aria-label="TAK Logo"
+            >
+              <span className="text-[10px] font-black tracking-tight text-[#003B7E]">TAK</span>
             </div>
             <span className="text-lg font-semibold text-white">Drug Management</span>
           </Link>
