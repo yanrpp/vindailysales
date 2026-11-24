@@ -6,7 +6,7 @@ export async function DELETE(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
     const fileType = searchParams.get("fileType"); // "BALANCE" | "DISPENSE" | "SALE" | "USAGE" | "ALL"
-    const period = searchParams.get("period")?.trim(); // งวด เช่น "2026-10"
+    let period = searchParams.get("period")?.trim(); // งวด เช่น "2026-10" | "LATEST" | "ALL"
     const rawGroup = searchParams.get("dataGroup")?.trim();
     const dataGroup = rawGroup && rawGroup !== "ALL" ? parseDataGroup(rawGroup) : null;
 
@@ -15,6 +15,27 @@ export async function DELETE(req: NextRequest) {
         { error: "กรุณาระบุประเภทข้อมูลที่ต้องการลบ (BALANCE, DISPENSE, SALE, USAGE, หรือ ALL)" },
         { status: 400 }
       );
+    }
+
+    // แปลง LATEST -> งวดล่าสุดที่มีจริงในระบบ (ไม่เช่นนั้นจะลบไม่เจอเพราะ DB ไม่มี period="LATEST")
+    if (period === "LATEST") {
+      const latestBatch = await prisma.importBatch.findFirst({
+        where: {
+          period: { not: null },
+          ...(dataGroup ? { dataGroup } : {}),
+          ...(fileType !== "ALL" ? { fileType } : {}),
+        },
+        orderBy: { period: "desc" },
+        select: { period: true },
+      });
+      period = latestBatch?.period || undefined;
+      if (!period) {
+        return NextResponse.json({
+          success: true,
+          message: "ไม่พบชุดข้อมูลให้ลบ (ยังไม่มีงวดในระบบ)",
+          deletedBatches: 0,
+        });
+      }
     }
 
     const whereClause: any = {};
@@ -47,7 +68,7 @@ export async function DELETE(req: NextRequest) {
         ? "2. ยอดตัดจ่าย"
         : fileType === "SALE"
         ? "3. ยอดขาย"
-        : "4. ปริมาณการใช้ & คู่ค้า";
+        : "4. ปริมาณการใช้";
 
     const periodText = period && period !== "ALL" ? ` ในงวด [${period}]` : "";
     const groupText = dataGroup ? ` กลุ่ม [${DATA_GROUP_LABELS[dataGroup]}]` : "";

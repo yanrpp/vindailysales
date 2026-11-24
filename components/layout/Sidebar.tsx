@@ -5,7 +5,24 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth/auth-context";
-import { UploadCloud, Package, FileText, AlertTriangle, Users, User, Database, ChevronDown, ChevronRight, PackageX, BarChart3, HardDrive, MapPin, ClipboardList } from "lucide-react";
+import {
+  UploadCloud,
+  Package,
+  FileText,
+  AlertTriangle,
+  Users,
+  Database,
+  ChevronDown,
+  ChevronRight,
+  ChevronLeft,
+  PackageX,
+  BarChart3,
+  HardDrive,
+  MapPin,
+  ClipboardList,
+  PanelLeftClose,
+  PanelLeftOpen,
+} from "lucide-react";
 
 interface SubMenuItem {
   href: string;
@@ -23,28 +40,35 @@ interface MenuItem {
 }
 
 const menuItems: MenuItem[] = [
-  // Dashboard Section (หน้าแรก)
   {
     href: "/",
     label: "Dashboard",
     icon: <BarChart3 className="h-5 w-5" />,
-    requireAuth: false, // Dashboard แสดงได้โดยไม่ต้อง login
+    requireAuth: false,
   },
-  // Master Inventory Analytics Section
   {
-    href: "/inventory-master",
     label: "นำเข้าและวิเคราะห์รายงาน",
     icon: <UploadCloud className="h-5 w-5" />,
     requireAuth: false,
+    submenu: [
+      {
+        href: "/inventory-master/ya",
+        label: "ยาและเวชภัณฑ์",
+        icon: <Package className="h-4 w-4" />,
+      },
+      {
+        href: "/inventory-master/vesaphan",
+        label: "พัสดุ",
+        icon: <Package className="h-4 w-4" />,
+      },
+    ],
   },
-  // Cloud Drive & File Sharing Section
   {
     href: "/drive",
     label: "คลังไฟล์ & รับ-ส่งไฟล์",
     icon: <HardDrive className="h-5 w-5" />,
     requireAuth: true,
   },
-  // Drug Data Section
   {
     href: "/locations",
     label: "ทะเบียน ITEMSTORE",
@@ -63,7 +87,6 @@ const menuItems: MenuItem[] = [
     icon: <Database className="h-5 w-5" />,
     requireAuth: true,
   },
-  // Inventory Section
   {
     href: "/inventory/non-moving",
     label: "สินค้าไม่เคลื่อนไหว",
@@ -87,7 +110,6 @@ const menuItems: MenuItem[] = [
       },
     ],
   },
-  // Admin Section
   {
     href: "/users",
     label: "จัดการผู้ใช้",
@@ -97,16 +119,25 @@ const menuItems: MenuItem[] = [
   },
 ];
 
-export function Sidebar() {
+interface SidebarProps {
+  collapsed?: boolean;
+  onToggleCollapse?: () => void;
+}
+
+export function Sidebar({ collapsed = false, onToggleCollapse }: SidebarProps) {
   const pathname = usePathname();
   const { isAuthenticated, isAdmin } = useAuth();
   const [openSubmenus, setOpenSubmenus] = useState<Set<string>>(() => {
-    // Auto-open submenu if current pathname matches any submenu item
     const initialOpen = new Set<string>();
     menuItems.forEach((item) => {
       if (item.submenu) {
-        const hasActiveSubmenu = item.submenu.some((subItem) => pathname === subItem.href);
-        if (hasActiveSubmenu) {
+        const hasActiveSubmenu = item.submenu.some(
+          (subItem) => pathname === subItem.href || pathname.startsWith(subItem.href + "/")
+        );
+        if (
+          hasActiveSubmenu ||
+          (item.label === "นำเข้าและวิเคราะห์รายงาน" && pathname.startsWith("/inventory-master"))
+        ) {
           initialOpen.add(item.label);
         }
       }
@@ -115,6 +146,11 @@ export function Sidebar() {
   });
 
   const toggleSubmenu = (label: string) => {
+    if (collapsed) {
+      onToggleCollapse?.();
+      setOpenSubmenus(new Set([label]));
+      return;
+    }
     const newOpenSubmenus = new Set(openSubmenus);
     if (newOpenSubmenus.has(label)) {
       newOpenSubmenus.delete(label);
@@ -124,30 +160,62 @@ export function Sidebar() {
     setOpenSubmenus(newOpenSubmenus);
   };
 
-  // ตรวจสอบว่า pathname อยู่ใน submenu หรือไม่
   const isSubmenuActive = (item: MenuItem) => {
     if (!item.submenu) return false;
-    return item.submenu.some((subItem) => pathname === subItem.href);
+    return item.submenu.some(
+      (subItem) => pathname === subItem.href || pathname.startsWith(subItem.href + "/")
+    );
   };
 
   return (
-    <aside className="h-screen w-64 bg-gradient-to-b from-blue-50/80 to-blue-100/50 backdrop-blur-sm shadow-lg transition-transform">
+    <aside
+      className={cn(
+        "h-screen bg-gradient-to-b from-blue-50/80 to-blue-100/50 backdrop-blur-sm shadow-lg transition-all duration-300 ease-in-out",
+        collapsed ? "w-[72px]" : "w-64"
+      )}
+    >
       <div className="flex h-full flex-col">
-        {/* Logo/Brand */}
-        <div className="flex h-16 items-center px-6 bg-gradient-to-r from-blue-600 to-blue-700 backdrop-blur-sm shadow-md">
-          <Link href="/" className="flex items-center gap-2">
+        {/* Logo/Brand — ปุ่มย่อ/ขยายเมนู */}
+        <div
+          className={cn(
+            "flex bg-gradient-to-r from-blue-600 to-blue-700 backdrop-blur-sm shadow-md",
+            collapsed ? "h-auto flex-col items-center gap-1 px-2 py-2" : "h-16 items-center justify-between px-3"
+          )}
+        >
+          <Link
+            href="/"
+            className={cn("flex items-center gap-2 min-w-0", collapsed && "justify-center")}
+            title="TAK Drug Management"
+          >
             <div
-              className="flex h-8 w-8 items-center justify-center rounded-md bg-white shadow-lg overflow-hidden"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-white shadow-lg overflow-hidden"
               aria-label="TAK Logo"
             >
               <span className="text-[10px] font-black tracking-tight text-[#003B7E]">TAK</span>
             </div>
-            <span className="text-lg font-semibold text-white">Drug Management</span>
+            {!collapsed && (
+              <span className="text-lg font-semibold text-white truncate">Drug Management</span>
+            )}
           </Link>
+          {onToggleCollapse && (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-white/90 hover:bg-white/15 hover:text-white transition-colors"
+              title={collapsed ? "ขยายเมนู" : "ย่อเมนู"}
+              aria-label={collapsed ? "ขยายเมนู" : "ย่อเมนู"}
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </button>
+          )}
         </div>
 
         {/* Navigation Menu */}
-        <nav className="flex-1 space-y-1 px-3 py-6 overflow-y-auto">
+        <nav className={cn("flex-1 space-y-1 py-6 overflow-y-auto", collapsed ? "px-2" : "px-3")}>
           {menuItems
             .filter((item) => {
               if (item.requireAuth && !isAuthenticated) return false;
@@ -157,7 +225,7 @@ export function Sidebar() {
             .map((item) => {
               const isActive = item.href ? pathname === item.href : false;
               const hasSubmenu = item.submenu && item.submenu.length > 0;
-              const isSubmenuOpen = hasSubmenu && openSubmenus.has(item.label);
+              const isSubmenuOpen = hasSubmenu && openSubmenus.has(item.label) && !collapsed;
               const isSubmenuItemActive = isSubmenuActive(item);
 
               return (
@@ -166,27 +234,31 @@ export function Sidebar() {
                     <>
                       <button
                         onClick={() => toggleSubmenu(item.label)}
+                        title={item.label}
                         className={cn(
-                          "w-full flex items-center justify-between gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                          "w-full flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-all duration-200",
+                          collapsed ? "justify-center px-2" : "justify-between px-3",
                           isActive || isSubmenuItemActive
                             ? "bg-blue-600 text-white shadow-md"
                             : "text-blue-900/70 hover:bg-blue-100/70 hover:text-blue-700"
                         )}
                       >
-                        <div className="flex items-center gap-3">
+                        <div className={cn("flex items-center gap-3", collapsed && "justify-center")}>
                           {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
-                          <span>{item.label}</span>
+                          {!collapsed && <span className="text-left leading-snug">{item.label}</span>}
                         </div>
-                        {isSubmenuOpen ? (
-                          <ChevronDown className="h-4 w-4 flex-shrink-0" />
-                        ) : (
-                          <ChevronRight className="h-4 w-4 flex-shrink-0" />
-                        )}
+                        {!collapsed &&
+                          (isSubmenuOpen ? (
+                            <ChevronDown className="h-4 w-4 flex-shrink-0" />
+                          ) : (
+                            <ChevronRight className="h-4 w-4 flex-shrink-0" />
+                          ))}
                       </button>
                       {isSubmenuOpen && (
                         <div className="ml-4 mt-1 space-y-1 border-l-2 border-blue-200 pl-2">
                           {item.submenu?.map((subItem) => {
                             const isSubActive = pathname === subItem.href;
+                            const isPasduSub = subItem.href.includes("/vesaphan");
                             return (
                               <Link
                                 key={subItem.href}
@@ -194,8 +266,12 @@ export function Sidebar() {
                                 className={cn(
                                   "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200",
                                   isSubActive
-                                    ? "bg-blue-500 text-white shadow-sm"
-                                    : "text-blue-800/70 hover:bg-blue-50 hover:text-blue-700"
+                                    ? isPasduSub
+                                      ? "bg-teal-700 text-white shadow-sm"
+                                      : "bg-blue-500 text-white shadow-sm"
+                                    : isPasduSub
+                                      ? "text-teal-800/70 hover:bg-teal-50 hover:text-teal-800"
+                                      : "text-blue-800/70 hover:bg-blue-50 hover:text-blue-700"
                                 )}
                               >
                                 {subItem.icon && <span className="flex-shrink-0">{subItem.icon}</span>}
@@ -209,15 +285,17 @@ export function Sidebar() {
                   ) : (
                     <Link
                       href={item.href || "#"}
+                      title={item.label}
                       className={cn(
-                        "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                        "flex items-center gap-3 rounded-lg py-2.5 text-sm font-medium transition-all duration-200",
+                        collapsed ? "justify-center px-2" : "px-3",
                         isActive
                           ? "bg-blue-600 text-white shadow-md"
                           : "text-blue-900/70 hover:bg-blue-100/70 hover:text-blue-700"
                       )}
                     >
                       {item.icon && <span className="flex-shrink-0">{item.icon}</span>}
-                      <span>{item.label}</span>
+                      {!collapsed && <span>{item.label}</span>}
                     </Link>
                   )}
                 </div>
@@ -226,13 +304,21 @@ export function Sidebar() {
         </nav>
 
         {/* Footer */}
-        <div className="p-4 bg-blue-50/80 backdrop-blur-sm">
-          <p className="text-xs text-blue-700/70">
-            © 2024 Drug Management
-          </p>
+        <div className={cn("bg-blue-50/80 backdrop-blur-sm", collapsed ? "p-2" : "p-4")}>
+          {collapsed ? (
+            <button
+              type="button"
+              onClick={onToggleCollapse}
+              className="mx-auto flex h-8 w-8 items-center justify-center rounded-lg text-blue-700 hover:bg-blue-100"
+              title="ขยายเมนู"
+            >
+              <ChevronLeft className="h-4 w-4 rotate-180" />
+            </button>
+          ) : (
+            <p className="text-xs text-blue-700/70">© 2024 Drug Management</p>
+          )}
         </div>
       </div>
     </aside>
   );
 }
-

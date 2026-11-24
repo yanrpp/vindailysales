@@ -1,14 +1,22 @@
-/** กลุ่มข้อมูลคลัง: Mainstore หรือ พัสดุ */
+/** กลุ่มข้อมูลคลัง: ยาและเวชภัณฑ์ หรือ พัสดุ */
 export type InventoryDataGroup = "MAINSTORE" | "PASDU";
 
 export const DATA_GROUP_LABELS: Record<InventoryDataGroup, string> = {
-  MAINSTORE: "Mainstore",
+  MAINSTORE: "ยาและเวชภัณฑ์",
   PASDU: "พัสดุ",
 };
 
 export function parseDataGroup(raw: string | null | undefined): InventoryDataGroup {
-  const v = (raw || "").trim().toUpperCase();
-  if (v === "PASDU" || v === "SUPPLIES" || v === "พัสดุ") return "PASDU";
+  const v = (raw || "").trim();
+  const upper = v.toUpperCase();
+  if (
+    upper === "PASDU" ||
+    upper === "SUPPLIES" ||
+    v === "พัสดุ" ||
+    v === "เวชภัณฑ์"
+  ) {
+    return "PASDU";
+  }
   return "MAINSTORE";
 }
 
@@ -25,13 +33,28 @@ export function parseDataDate(raw: string | null | undefined): Date | null {
   return isNaN(dt.getTime()) ? null : dt;
 }
 
+/** แสดงวันที่เป็น dd/mm/yyyy */
 export function formatDataDate(value: Date | string | null | undefined): string {
   if (!value) return "-";
-  const d = typeof value === "string" ? new Date(value) : value;
-  if (isNaN(d.getTime())) return "-";
-  return d.toLocaleDateString("th-TH", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
+
+  if (typeof value === "string") {
+    const s = value.trim();
+    // YYYY-MM-DD จาก input type="date"
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+      const [y, m, d] = s.split("-");
+      return `${d}/${m}/${y}`;
+    }
+    const dt = new Date(s);
+    if (isNaN(dt.getTime())) return "-";
+    const dd = String(dt.getUTCDate()).padStart(2, "0");
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
+    const yyyy = String(dt.getUTCFullYear());
+    return `${dd}/${mm}/${yyyy}`;
+  }
+
+  if (isNaN(value.getTime())) return "-";
+  const dd = String(value.getUTCDate()).padStart(2, "0");
+  const mm = String(value.getUTCMonth() + 1).padStart(2, "0");
+  const yyyy = String(value.getUTCFullYear());
+  return `${dd}/${mm}/${yyyy}`;
 }

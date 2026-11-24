@@ -61,18 +61,24 @@ export async function POST(req: NextRequest) {
     const period = rawPeriod.trim() || currentPeriodStr;
 
     let existingBatchCount = 0;
+    let sameDateBatchCount = 0;
     let latestBatch: any = null;
     let isDuplicate = false;
     let duplicateMessage = "";
 
     try {
-      existingBatchCount = await prisma.importBatch.count({
-        where: { fileType, period, dataGroup },
-      });
+      // แทนที่/เพิ่มต่อยอด ใช้กับ "วันที่ของข้อมูล" เดียวกันเท่านั้น
+      sameDateBatchCount = dataDate
+        ? await prisma.importBatch.count({
+            where: { fileType, dataGroup, dataDate },
+          })
+        : 0;
 
-      if (existingBatchCount > 0) {
+      existingBatchCount = sameDateBatchCount;
+
+      if (sameDateBatchCount > 0) {
         latestBatch = await prisma.importBatch.findFirst({
-          where: { fileType, period, dataGroup },
+          where: { fileType, dataGroup, dataDate: dataDate! },
           orderBy: { createdAt: "desc" },
         });
 
@@ -84,13 +90,13 @@ export async function POST(req: NextRequest) {
             ? "2. ยอดตัดจ่าย"
             : fileType === "SALE"
             ? "3. ยอดขาย"
-            : "4. ปริมาณการใช้ & คู่ค้า";
+            : "4. ปริมาณการใช้";
 
-        const dateStr = latestBatch?.createdAt
-          ? new Date(latestBatch.createdAt).toLocaleString("th-TH")
-          : "";
+        const dataDateLabel = dataDate
+          ? `${String(dataDate.getUTCDate()).padStart(2, "0")}/${String(dataDate.getUTCMonth() + 1).padStart(2, "0")}/${dataDate.getUTCFullYear()}`
+          : "-";
 
-        duplicateMessage = `ตรวจพบข้อมูลประเภท "${typeName}" กลุ่ม [${DATA_GROUP_LABELS[dataGroup]}] ในงวด [${period}] อยู่แล้ว (${existingBatchCount} รอบ, ล่าสุดไฟล์ "${latestBatch?.fileName || "-"}" เมื่อ ${dateStr})`;
+        duplicateMessage = `ตรวจพบข้อมูลประเภท "${typeName}" กลุ่ม [${DATA_GROUP_LABELS[dataGroup]}] วันที่ของข้อมูล [${dataDateLabel}] อยู่แล้ว (${sameDateBatchCount} ชุด, ล่าสุดไฟล์ "${latestBatch?.fileName || "-"}") — ใช้โหมดแทนที่หรือเพิ่มต่อยอดได้`;
       }
     } catch (dbErr) {
       console.warn("Could not check duplicate batches from DB:", dbErr);
@@ -106,6 +112,7 @@ export async function POST(req: NextRequest) {
       duplicateInfo: {
         isDuplicate,
         existingBatchCount,
+        sameDateBatchCount,
         latestBatch,
         duplicateMessage,
       },

@@ -158,6 +158,8 @@ model ImportBatch {
   fileSize     Int?                @map("file_size")
   uploadedBy   String?             @map("uploaded_by")
   note         String?
+  // หัวคอลัมน์เดือนจากไฟล์ 4.ปริมาณการใช้ เช่น ["กันยายน 2569","ตุลาคม 2569"]
+  usageMonthLabels Json?           @map("usage_month_labels")
   createdAt    DateTime            @default(now()) @map("created_at") // วันที่นำเข้าจริง
   balances     InventoryBalance[]
   dispenses    InventoryDispense[]
@@ -262,9 +264,11 @@ model InventoryUsage {
   unit        String?      // Col D
   balanceQty  Float?       @map("balance_qty") // ยอดคงเหลือจาก Sheet เหลือ (Col E)
   minQty      Float?       @map("min_qty")     // จุดสั่งซื้อ MIN จาก Sheet เหลือ (Col F)
-  usageMonth1 Float?       @map("usage_month_1") // ปริมาณการใช้ 6
-  usageMonth2 Float?       @map("usage_month_2") // ปริมาณการใช้ 7
-  usageMonth3 Float?       @map("usage_month_3") // ปริมาณการใช้ 8
+  usageMonth1 Float?       @map("usage_month_1") // legacy / เดือนแรก (ถ้ามี)
+  usageMonth2 Float?       @map("usage_month_2") // legacy
+  usageMonth3 Float?       @map("usage_month_3") // legacy
+  // ค่าปริมาณการใช้ทุกคอลัมน์เดือนตามไฟล์ (เรียงตาม usageMonthLabels ของ batch)
+  usageMonths Json?        @map("usage_months")
   category    String?      // หมวด
   supplier    String?      // บริษัทคู่ค้า
   createdAt   DateTime     @default(now()) @map("created_at")

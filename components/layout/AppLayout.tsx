@@ -4,7 +4,6 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "./Sidebar";
 import { TopBar } from "./TopBar";
-import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth/auth-context";
 
 interface AppLayoutProps {
@@ -13,31 +12,50 @@ interface AppLayoutProps {
   description?: string;
 }
 
-// หน้าเหล่านี้ไม่ต้องแสดง sidebar และ topbar และไม่ต้องตรวจสอบ authentication
 const publicPages = ["/login", "/register"];
+const SIDEBAR_COLLAPSED_KEY = "tak-sidebar-collapsed";
 
 export function AppLayout({ children, title, description }: AppLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const pathname = usePathname();
   const router = useRouter();
   const { isAuthenticated, loading } = useAuth();
   const isPublicPage = publicPages.includes(pathname) || pathname.startsWith("/drive/shared/");
 
-  // ตรวจสอบ authentication และ redirect ถ้ายังไม่ได้ login
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(SIDEBAR_COLLAPSED_KEY);
+      if (saved === "1") setSidebarCollapsed(true);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const toggleSidebarCollapsed = () => {
+    setSidebarCollapsed((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SIDEBAR_COLLAPSED_KEY, next ? "1" : "0");
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  };
+
   useEffect(() => {
     if (!loading && !isPublicPage && !isAuthenticated) {
-      // เก็บ URL ปัจจุบันไว้ใน query parameter เพื่อ redirect กลับมาหลัง login
-      const redirectUrl = pathname !== "/" ? `/login?redirect=${encodeURIComponent(pathname)}` : "/login";
+      const redirectUrl =
+        pathname !== "/" ? `/login?redirect=${encodeURIComponent(pathname)}` : "/login";
       router.push(redirectUrl);
     }
   }, [isAuthenticated, loading, isPublicPage, pathname, router]);
 
-  // ถ้าเป็น public page (login/register) ให้แสดงแค่ children
   if (isPublicPage) {
     return <>{children}</>;
   }
 
-  // ถ้ายัง loading หรือยังไม่ได้ login ให้แสดง loading state
   if (loading || !isAuthenticated) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -52,11 +70,11 @@ export function AppLayout({ children, title, description }: AppLayoutProps) {
   return (
     <div className="flex h-screen overflow-hidden bg-background">
       {/* Sidebar - Desktop */}
-      <div className="hidden lg:block">
-        <Sidebar />
+      <div className="hidden lg:block relative">
+        <Sidebar collapsed={sidebarCollapsed} onToggleCollapse={toggleSidebarCollapsed} />
       </div>
 
-      {/* Sidebar - Mobile (Overlay) */}
+      {/* Sidebar - Mobile (Overlay) — เต็มความกว้าง */}
       {sidebarOpen && (
         <>
           <div
@@ -70,15 +88,13 @@ export function AppLayout({ children, title, description }: AppLayoutProps) {
       )}
 
       {/* Main Content Area */}
-      <div className="flex flex-1 flex-col overflow-hidden bg-background">
-        {/* Top Bar */}
-        <TopBar 
-          title={title} 
+      <div className="flex flex-1 flex-col overflow-hidden bg-background min-w-0">
+        <TopBar
+          title={title}
           description={description}
           onMenuClick={() => setSidebarOpen(!sidebarOpen)}
         />
 
-        {/* Page Content */}
         <main className="flex-1 overflow-y-auto bg-gradient-to-br from-blue-50/30 via-white to-red-50/20">
           <div className="h-full p-4 lg:p-6">{children}</div>
         </main>
@@ -86,4 +102,3 @@ export function AppLayout({ children, title, description }: AppLayoutProps) {
     </div>
   );
 }
-

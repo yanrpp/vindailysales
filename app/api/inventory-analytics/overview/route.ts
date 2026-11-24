@@ -1,7 +1,43 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { fixThaiEncoding } from "@/lib/excel-validator";
-import { parseDataGroup } from "@/lib/inventory-data-group";
+import { parseDataGroup, parseDataDate } from "@/lib/inventory-data-group";
+import {
+  buildMonthRangeBack,
+  computeMaxAvgFromMonthWindow,
+  formatBuddhistMonthLabel,
+  toBuddhistMonth,
+} from "@/lib/usage-month-range";
+
+/** แปลง sortBy จาก UI เป็น Prisma orderBy (ฟิลด์ที่เรียงใน DB ได้) */
+function buildPrismaOrderBy(
+  sortBy: string,
+  sortOrder: "asc" | "desc",
+  allowed: string[]
+): Record<string, "asc" | "desc"> {
+  if (sortBy && sortBy !== "seq" && allowed.includes(sortBy)) {
+    return { [sortBy]: sortOrder };
+  }
+  return { createdAt: "desc" };
+}
+
+function compareSortValues(a: any, b: any, sortBy: string, sortOrder: "asc" | "desc") {
+  let valA = a?.[sortBy];
+  let valB = b?.[sortBy];
+  if (valA === null || valA === undefined) valA = sortOrder === "asc" ? Infinity : -Infinity;
+  if (valB === null || valB === undefined) valB = sortOrder === "asc" ? Infinity : -Infinity;
+  if (typeof valA === "string" || typeof valB === "string") {
+    return sortOrder === "asc"
+      ? String(valA).localeCompare(String(valB), "th")
+      : String(valB).localeCompare(String(valA), "th");
+  }
+  const numA = Number(valA);
+  const numB = Number(valB);
+  if (!isNaN(numA) && !isNaN(numB)) {
+    return sortOrder === "asc" ? numA - numB : numB - numA;
+  }
+  return 0;
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -14,6 +50,23 @@ export async function GET(req: NextRequest) {
     const stockStatus = searchParams.get("stockStatus")?.trim() || "ALL"; // "ALL" | "NEED_ORDER" | "SUFFICIENT"
     // balance tab: "HAS_VALUE" (default) | "MIN_ZERO" (minQty null หรือ 0)
     const minFilter = searchParams.get("minFilter")?.trim() || "HAS_VALUE";
+    // overview: กรองคอลัมน์เหลือ / MIN แยกกัน — HAS_VALUE | INCLUDE_EMPTY | EMPTY_ONLY (ดีฟอลต์รวม -)
+    const balanceEmpty = searchParams.get("balanceEmpty")?.trim() || "INCLUDE_EMPTY";
+    const minEmpty = searchParams.get("minEmpty")?.trim() || "HAS_VALUE";
+    // จำนวนเดือนสำหรับ MAX/AVG (ดีฟอลต์ 3)
+    const usageMonthCount = Math.max(
+      1,
+      Math.min(12, parseInt(searchParams.get("usageMonthCount") || "3", 10) || 3)
+    );
+    const usageEndYear = parseInt(searchParams.get("usageEndYear") || "", 10);
+    const usageEndMonth = parseInt(searchParams.get("usageEndMonth") || "", 10);
+    const usageRangeEnd =
+      usageEndYear >= 2400 && usageEndMonth >= 1 && usageEndMonth <= 12
+        ? { year: usageEndYear, month: usageEndMonth }
+        : toBuddhistMonth();
+    const usageDisplayLabels = buildMonthRangeBack(usageRangeEnd, usageMonthCount).map(
+      formatBuddhistMonthLabel
+    );
     const sortBy = searchParams.get("sortBy")?.trim() || "seq";
     const sortOrder = searchParams.get("sortOrder")?.toLowerCase() === "desc" ? "desc" : "asc";
     const dataGroup = parseDataGroup(searchParams.get("dataGroup"));
@@ -25,16 +78,31 @@ export async function GET(req: NextRequest) {
       : Math.max(10, Math.min(200, parseInt(searchParams.get("limit") || "50")));
     const skip = limit !== undefined ? (page - 1) * limit : undefined;
 
-    // หา Available Periods ทั้งหมดที่มีในระบบ (กรองตามกลุ่มข้อมูล)
+    // งวดที่แสดง = จากไฟล์นำเข้า คงเหลือ/ตัดจ่าย/ขาย เท่านั้น (ไม่นับปริมาณการใช้ ซึ่งเป็นฐานคำนวณ)
+    const periodSourceTypes = ["BALANCE", "DISPENSE", "SALE"] as const;
     const distinctBatches = await prisma.importBatch.findMany({
-      where: { period: { not: null }, dataGroup },
-      select: { period: true },
-      distinct: ["period"],
-      orderBy: { period: "desc" },
+      where: {
+        period: { not: null },
+        dataGroup,
+        fileType: { in: [...periodSourceTypes] },
+      },
+      select: { period: true, dataDate: true, createdAt: true },
+      orderBy: [{ period: "desc" }, { dataDate: "desc" }, { createdAt: "desc" }],
     });
-    const availablePeriods = distinctBatches
-      .map((b) => b.period as string)
-      .filter(Boolean);
+    const availablePeriods: string[] = [];
+    const periodDataDates: Record<string, string> = {};
+    for (const b of distinctBatches) {
+      const p = b.period as string;
+      if (!p) continue;
+      if (!availablePeriods.includes(p)) availablePeriods.push(p);
+      if (b.dataDate && !periodDataDates[p]) {
+        const d = b.dataDate;
+        const yyyy = d.getUTCFullYear();
+        const mm = String(d.getUTCMonth() + 1).padStart(2, "0");
+        const dd = String(d.getUTCDate()).padStart(2, "0");
+        periodDataDates[p] = `${yyyy}-${mm}-${dd}`;
+      }
+    }
 
     const periodParam = searchParams.get("period")?.trim();
     let selectedPeriod: string;
@@ -87,13 +155,32 @@ export async function GET(req: NextRequest) {
       } | null
     >;
 
-    // Upload tab: ใช้เฉพาะชื่อไฟล์ล่าสุด
+    // Upload tab: ชื่อไฟล์ล่าสุด + นับชุดที่มีวันที่ของข้อมูลตรงกับที่เลือก
     if (tab === "upload") {
+      const dataDate = parseDataDate(searchParams.get("dataDate"));
+      const sameDateCounts: Record<string, number> = {
+        BALANCE: 0,
+        DISPENSE: 0,
+        SALE: 0,
+        USAGE: 0,
+      };
+      if (dataDate) {
+        await Promise.all(
+          fileTypes.map(async (fileType) => {
+            sameDateCounts[fileType] = await prisma.importBatch.count({
+              where: { fileType, dataGroup, dataDate },
+            });
+          })
+        );
+      }
+
       return NextResponse.json({
         latestFiles,
+        sameDateCounts,
         selectedPeriod,
         selectedDataGroup: dataGroup,
         availablePeriods,
+        periodDataDates,
       });
     }
 
@@ -117,6 +204,7 @@ export async function GET(req: NextRequest) {
         selectedPeriod,
         selectedDataGroup: dataGroup,
         availablePeriods,
+        periodDataDates,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
@@ -148,7 +236,16 @@ export async function GET(req: NextRequest) {
       const total = await prisma.inventoryBalance.count({ where });
       const items = await prisma.inventoryBalance.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: buildPrismaOrderBy(sortBy, sortOrder, [
+          "itemCode",
+          "itemName",
+          "unit",
+          "balanceQty",
+          "minQty",
+          "unitPrice",
+          "totalCost",
+          "createdAt",
+        ]),
         take: limit,
         skip,
         include: { batch: true },
@@ -164,6 +261,7 @@ export async function GET(req: NextRequest) {
         selectedPeriod,
         selectedDataGroup: dataGroup,
         availablePeriods,
+        periodDataDates,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
@@ -185,7 +283,16 @@ export async function GET(req: NextRequest) {
       const total = await prisma.inventoryDispense.count({ where });
       const items = await prisma.inventoryDispense.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: buildPrismaOrderBy(sortBy, sortOrder, [
+          "itemCode",
+          "itemName",
+          "unit",
+          "rawQty",
+          "adjustedQty",
+          "unitPrice",
+          "totalCost",
+          "createdAt",
+        ]),
         take: limit,
         skip,
         include: { batch: true },
@@ -201,6 +308,7 @@ export async function GET(req: NextRequest) {
         selectedPeriod,
         selectedDataGroup: dataGroup,
         availablePeriods,
+        periodDataDates,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
@@ -222,7 +330,16 @@ export async function GET(req: NextRequest) {
       const total = await prisma.inventorySale.count({ where });
       const items = await prisma.inventorySale.findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: buildPrismaOrderBy(sortBy, sortOrder, [
+          "itemCode",
+          "itemName",
+          "unit",
+          "rawQty",
+          "adjustedQty",
+          "saleAmount",
+          "costAmount",
+          "createdAt",
+        ]),
         take: limit,
         skip,
         include: { batch: true },
@@ -238,11 +355,12 @@ export async function GET(req: NextRequest) {
         selectedPeriod,
         selectedDataGroup: dataGroup,
         availablePeriods,
+        periodDataDates,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
 
-    // 5. Tab Usage (ปริมาณการใช้ & คู่ค้า)
+    // 5. Tab Usage (ปริมาณการใช้)
     if (tab === "usage") {
       const where: any = {
         ...periodFilter,
@@ -258,30 +376,112 @@ export async function GET(req: NextRequest) {
           : {}),
       };
 
-      const total = await prisma.inventoryUsage.count({ where });
-      const items = await prisma.inventoryUsage.findMany({
-        where,
-        orderBy: { createdAt: "desc" },
-        take: limit,
-        skip,
-        include: { batch: true },
-      });
+      const dbSortable = ["itemCode", "itemName", "unit", "category", "supplier", "createdAt"];
+      const needsMemorySort =
+        sortBy.startsWith("usageMonth_") ||
+        sortBy.startsWith("month:") ||
+        sortBy === "thisMonthUsage" ||
+        sortBy === "usageMonth3";
 
-      return NextResponse.json({
-        items: items.map((item, idx) => ({
+      const [totalCountUsage, rawItems, dispensesForUsage, salesForUsage, latestUsageBatch] =
+        await Promise.all([
+          prisma.inventoryUsage.count({ where }),
+          prisma.inventoryUsage.findMany({
+            where,
+            orderBy: needsMemorySort
+              ? { createdAt: "desc" }
+              : buildPrismaOrderBy(sortBy, sortOrder, dbSortable),
+            // เรียงคอลัมน์เดือน/เดือนนี้ในหน่วยความจำ — ดึงทั้งหมดก่อนแล้วค่อยตัดหน้า
+            ...(needsMemorySort || isAll ? {} : { take: limit, skip }),
+            include: { batch: true },
+          }),
+          prisma.inventoryDispense.findMany({
+            where: periodFilter,
+            select: { itemCode: true, adjustedQty: true },
+          }),
+          prisma.inventorySale.findMany({
+            where: periodFilter,
+            select: { itemCode: true, adjustedQty: true },
+          }),
+          prisma.importBatch.findFirst({
+            where: { fileType: "USAGE", ...periodFilter },
+            orderBy: { createdAt: "desc" },
+            select: { usageMonthLabels: true },
+          }),
+        ]);
+
+      const thisMonthByCode = new Map<string, number>();
+      const addQty = (code: string, qty: number | null | undefined) => {
+        const key = fixThaiEncoding(code).trim();
+        if (!key) return;
+        thisMonthByCode.set(key, (thisMonthByCode.get(key) || 0) + (qty || 0));
+      };
+      dispensesForUsage.forEach((d) => addQty(d.itemCode, d.adjustedQty));
+      salesForUsage.forEach((s) => addQty(s.itemCode, s.adjustedQty));
+
+      const usageMonthLabels = Array.isArray(latestUsageBatch?.usageMonthLabels)
+        ? (latestUsageBatch!.usageMonthLabels as string[])
+        : ["ย้อนหลัง 1 เดือน", "เดือนนี้"];
+
+      let mapped = rawItems.map((item) => {
+        const months = Array.isArray(item.usageMonths)
+          ? (item.usageMonths as (number | null)[])
+          : [item.usageMonth2, item.usageMonth3];
+        const codeKey = fixThaiEncoding(item.itemCode).trim();
+        const thisMonthUsage = thisMonthByCode.has(codeKey)
+          ? Number(thisMonthByCode.get(codeKey)!.toFixed(2))
+          : null;
+        const row: any = {
           ...item,
-          seq: (skip || 0) + idx + 1,
           itemName: item.itemName ? fixThaiEncoding(item.itemName) : null,
           unit: item.unit ? fixThaiEncoding(item.unit) : null,
           category: item.category ? fixThaiEncoding(item.category) : null,
           supplier: item.supplier ? fixThaiEncoding(item.supplier) : null,
+          usageMonths: months,
+          thisMonthUsage,
+          usageMonth3: thisMonthUsage,
+        };
+        // ฟิลด์ช่วยเรียงคอลัมน์เดือน (ตาม index และตามชื่อเดือน)
+        months.forEach((v, i) => {
+          row[`usageMonth_${i}`] = v;
+          const label = usageMonthLabels[i];
+          if (label) row[`month:${label}`] = v;
+        });
+        return row;
+      });
+
+      if (needsMemorySort) {
+        mapped.sort((a, b) => compareSortValues(a, b, sortBy, sortOrder));
+      }
+
+      const total = totalCountUsage;
+      const pageItems =
+        needsMemorySort || isAll
+          ? limit !== undefined
+            ? mapped.slice(skip || 0, (skip || 0) + limit)
+            : mapped
+          : mapped;
+
+      return NextResponse.json({
+        items: pageItems.map((item, idx) => ({
+          ...item,
+          seq: (skip || 0) + idx + 1,
         })),
+        usageMonthLabels,
         selectedPeriod,
         selectedDataGroup: dataGroup,
         availablePeriods,
+        periodDataDates,
         pagination: { total, page, limit: limit ?? total, totalPages: limit ? Math.ceil(total / limit) : 1 },
       });
     }
+
+    // ปริมาณการใช้ = ฐานคำนวณจากชุดนำเข้าล่าสุดของกลุ่ม (ไม่ผูกงวดเดียวกับคงเหลือ/ตัดจ่าย/ขาย)
+    const latestUsageBatchForCalc = await prisma.importBatch.findFirst({
+      where: { fileType: "USAGE", dataGroup },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, usageMonthLabels: true },
+    });
 
     // 6. Master Overview: รวมข้อมูล 4 ส่วนตามโครงสร้าง Sheet "เหลือ" + ยอดค้างส่ง
     const [balances, dispenses, sales, usages, pendingList] = await Promise.all([
@@ -321,21 +521,24 @@ export async function GET(req: NextRequest) {
           costAmount: true,
         },
       }),
-      prisma.inventoryUsage.findMany({
-        where: periodFilter,
-        select: {
-          itemCode: true,
-          itemName: true,
-          unit: true,
-          balanceQty: true,
-          minQty: true,
-          usageMonth1: true,
-          usageMonth2: true,
-          usageMonth3: true,
-          category: true,
-          supplier: true,
-        },
-      }),
+      latestUsageBatchForCalc
+        ? prisma.inventoryUsage.findMany({
+            where: { batchId: latestUsageBatchForCalc.id, dataGroup },
+            select: {
+              itemCode: true,
+              itemName: true,
+              unit: true,
+              balanceQty: true,
+              minQty: true,
+              usageMonth1: true,
+              usageMonth2: true,
+              usageMonth3: true,
+              usageMonths: true,
+              category: true,
+              supplier: true,
+            },
+          })
+        : Promise.resolve([] as any[]),
       (prisma as any).inventoryPendingDelivery.findMany({
         select: {
           itemCode: true,
@@ -343,6 +546,10 @@ export async function GET(req: NextRequest) {
         },
       }),
     ]);
+
+    const overviewUsageMonthLabels = Array.isArray(latestUsageBatchForCalc?.usageMonthLabels)
+      ? (latestUsageBatchForCalc!.usageMonthLabels as string[])
+      : ["ย้อนหลัง 1 เดือน"];
 
     const pendingMap = new Map<string, number>();
     (pendingList as any[]).forEach((p) => {
@@ -414,6 +621,9 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
         usageMonth1: u.usageMonth1,
         usageMonth2: u.usageMonth2,
         usageMonth3: u.usageMonth3,
+        usageMonths: Array.isArray(u.usageMonths)
+          ? (u.usageMonths as (number | null)[])
+          : [u.usageMonth2, u.usageMonth3],
         dispenseRawQty: 0,
         dispenseAdjustedQty: 0,
         saleRawQty: 0,
@@ -541,18 +751,24 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
       if (item.supplier) supplierSet.add(item.supplier);
       if (item.unit && item.unit !== "-") unitSet.add(item.unit);
 
-      // เดือนนี้ (ตัด+ขาย) = ยอดตัดจ่ายปรับปรุง + ยอดขายปรับปรุง (ไม่ใช้ usageMonth3 จากไฟล์ 4)
+      // เดือนนี้ (ตัด+ขาย) = ยอดตัดจ่ายปรับปรุง + ยอดขายปรับปรุง
       const m3 = Number(
         ((item.dispenseAdjustedQty || 0) + (item.saleAdjustedQty || 0)).toFixed(2)
       );
 
-      const u1 = item.usageMonth1 !== null && item.usageMonth1 !== undefined ? item.usageMonth1 : 0;
-      const u2 = item.usageMonth2 !== null && item.usageMonth2 !== undefined ? item.usageMonth2 : 0;
-      const u3 = m3;
+      const sourceMonths = Array.isArray(item.usageMonths)
+        ? (item.usageMonths as (number | null)[])
+        : [item.usageMonth2, item.usageMonth3];
+      const sourceLabels = overviewUsageMonthLabels;
 
-      const maxUsage = Math.max(u1, u2, u3);
-      const avgUsage = Number(((u1 + u2 + u3) / 3).toFixed(2));
-      
+      // MAX/AVG จากจำนวนเดือนที่เลือก (เดือนสุดท้าย = ตัด+ขาย)
+      const { maxUsage, avgUsage } = computeMaxAvgFromMonthWindow(
+        usageDisplayLabels,
+        sourceLabels,
+        sourceMonths,
+        m3
+      );
+
       const balance = item.balanceQty !== null && item.balanceQty !== undefined ? item.balanceQty : 0;
       const diff = Number((balance - maxUsage).toFixed(2)); // เหลือ - MAX
       const needOrder = diff < 0;
@@ -568,13 +784,15 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
         unit: item.unit || "-",
         balanceQty: item.balanceQty,
         minQty: item.minQty,
-        usageMonth1: item.usageMonth1,
+        usageMonth1: null,
         usageMonth2: item.usageMonth2,
         usageMonth3: m3,
+        usageMonths: sourceMonths,
         dispenseAdjustedQty: item.dispenseAdjustedQty,
         saleAdjustedQty: item.saleAdjustedQty,
         maxUsage,
         avgUsage,
+        usageMonthCount,
         diff, // เหลือ - MAX
         needOrder,
         pendingDelivery,
@@ -612,6 +830,19 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
       allItems = allItems.filter((item) => item.needOrder);
     } else if (stockStatus === "SUFFICIENT") {
       allItems = allItems.filter((item) => !item.needOrder && item.balanceQty !== null);
+    }
+
+    // กรองคอลัมน์เหลือ / MIN ตามตัวเลือกในหัวตาราง (ดีฟอลต์ซ่อน "-")
+    const isEmptyVal = (v: any) => v === null || v === undefined;
+    if (balanceEmpty === "HAS_VALUE") {
+      allItems = allItems.filter((item) => !isEmptyVal(item.balanceQty));
+    } else if (balanceEmpty === "EMPTY_ONLY") {
+      allItems = allItems.filter((item) => isEmptyVal(item.balanceQty));
+    }
+    if (minEmpty === "HAS_VALUE") {
+      allItems = allItems.filter((item) => !isEmptyVal(item.minQty));
+    } else if (minEmpty === "EMPTY_ONLY") {
+      allItems = allItems.filter((item) => isEmptyVal(item.minQty));
     }
 
     // Dynamic Column Sorting
@@ -653,11 +884,15 @@ function inferCategoryByCode(code: string, itemName?: string | null): string {
 
     return NextResponse.json({
       items: paginatedItems,
+      usageMonthLabels: overviewUsageMonthLabels,
       selectedPeriod,
       selectedDataGroup: dataGroup,
       availablePeriods,
+      periodDataDates,
       metrics: {
-        totalUniqueCodes: itemMap.size,
+        // จำนวนรหัสหลังกรอง (ตรงกับ "ทั้งหมด N รายการ" ในตาราง)
+        totalUniqueCodes: allItems.length,
+        totalCodesAll: itemMap.size,
         totalBalanceRecords: balances.length,
         totalDispenseRecords: dispenses.length,
         totalSaleRecords: sales.length,
